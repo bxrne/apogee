@@ -78,7 +78,11 @@ mod tests {
 
     #[test_case]
     fn test_heap_size_multiple_of_page() {
-        assert_eq!(HEAP_SIZE % 4096, 0, "HEAP_SIZE must be multiple of page size");
+        assert_eq!(
+            HEAP_SIZE % 4096,
+            0,
+            "HEAP_SIZE must be multiple of page size"
+        );
     }
 
     #[test_case]
@@ -88,6 +92,9 @@ mod tests {
 
     #[test_case]
     fn test_heap_start_address_range() {
-        assert!(HEAP_START > 0x1_0000, "HEAP_START should be in valid address range");
+        assert!(
+            HEAP_START > 0x1_0000,
+            "HEAP_START should be in valid address range"
+        );
     }
 }

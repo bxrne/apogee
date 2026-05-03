@@ -2,8 +2,7 @@ use x86_64::{
     PhysAddr, VirtAddr,
     registers::control::Cr3,
     structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable,  PhysFrame,
-        Size4KiB,
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PhysFrame, Size4KiB,
     },
 };
 
@@ -95,7 +94,6 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test_case]
     fn test_page_containing_address() {

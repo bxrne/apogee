@@ -45,10 +45,19 @@ where
 }
 
 pub fn test_runner(tests: &[&dyn Testable]) {
-    serial_println!("Running {} tests", tests.len());
+    serial_println!("");
+    serial_println!("==============================================");
+    serial_println!("  Running {} tests", tests.len());
+    serial_println!("==============================================");
+    serial_println!("");
     for test in tests {
         test.run();
     }
+    serial_println!("");
+    serial_println!("----------------------------------------------");
+    serial_println!("  All tests passed!");
+    serial_println!("----------------------------------------------");
+    serial_println!("");
     exit_qemu(QemuExitCode::Success);
 }
 

@@ -2,9 +2,11 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 use uart_16550::SerialPort;
 
+pub const SERIAL_PORT_BASE: u16 = 0x3F8;
+
 lazy_static! {
     pub static ref SERIAL1: Mutex<SerialPort> = {
-        let mut serial_port = unsafe { SerialPort::new(0x3F8) };
+        let mut serial_port = unsafe { SerialPort::new(SERIAL_PORT_BASE) };
         serial_port.init();
         Mutex::new(serial_port)
     };
@@ -34,4 +36,24 @@ macro_rules! serial_println {
     ($fmt:expr) => ($crate::serial_print!(concat!($fmt, "\n")));
     ($fmt:expr, $($arg:tt)*) => ($crate::serial_print!(
         concat!($fmt, "\n"), $($arg)*));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn test_serial_port_base_address() {
+        assert_eq!(SERIAL_PORT_BASE, 0x3F8);
+    }
+
+    #[test_case]
+    fn test_serial_port_base_valid_range() {
+        assert!(SERIAL_PORT_BASE > 0);
+    }
+
+    #[test_case]
+    fn test_serial_port_base_standard_com1() {
+        assert_eq!(SERIAL_PORT_BASE, 0x3F8);
+    }
 }

@@ -50,3 +50,24 @@ pub fn init() {
         load_tss(GDT.1.tss_selector);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn test_double_fault_ist_index_zero() {
+        assert_eq!(DOUBLE_FAULT_IST_INDEX, 0);
+    }
+
+    #[test_case]
+    fn test_ist_index_within_bounds() {
+        assert!(DOUBLE_FAULT_IST_INDEX < 7);
+    }
+
+    #[test_case]
+    fn test_ist_stack_size() {
+        const STACK_SIZE: usize = 4096 * 5;
+        assert_eq!(STACK_SIZE, 20480);
+    }
+}

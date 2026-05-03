@@ -19,6 +19,9 @@ harness = false
 name = "stack_overflow"
 harness = false
 
+[[test]]
+name = "heap_allocation"
+
 [profile.dev]
 panic = "abort"
 

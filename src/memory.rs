@@ -2,9 +2,13 @@ use x86_64::{
     PhysAddr, VirtAddr,
     registers::control::Cr3,
     structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PhysFrame, Size4KiB,
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable,  PhysFrame,
+        Size4KiB,
     },
 };
+
+#[cfg(test)]
+use x86_64::structures::paging::PageTableFlags;
 
 use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
 
@@ -85,5 +89,51 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
         let frame = self.usable_frames().nth(self.next);
         self.next += 1;
         frame
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    #[test_case]
+    fn test_page_containing_address() {
+        let addr = VirtAddr::new(0x8000);
+        let page: Page<Size4KiB> = Page::containing_address(addr);
+        assert_eq!(page.start_address(), VirtAddr::new(0x8000));
+    }
+
+    #[test_case]
+    fn test_page_range_inclusive() {
+        let start: Page<Size4KiB> = Page::containing_address(VirtAddr::new(0x1000));
+        let end: Page<Size4KiB> = Page::containing_address(VirtAddr::new(0x3000));
+
+        let mut count = 0;
+        for _ in Page::range_inclusive(start, end) {
+            count += 1;
+        }
+        assert_eq!(count, 3);
+    }
+
+    #[test_case]
+    fn test_phys_frame_containing_address() {
+        let addr = PhysAddr::new(0xb8000);
+        let frame: PhysFrame<Size4KiB> = PhysFrame::containing_address(addr);
+        assert_eq!(frame.start_address(), PhysAddr::new(0xb8000));
+    }
+
+    #[test_case]
+    fn test_page_table_flags_present_writable() {
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        assert!(flags.contains(PageTableFlags::PRESENT));
+        assert!(flags.contains(PageTableFlags::WRITABLE));
+    }
+
+    #[test_case]
+    fn test_vga_frame_address() {
+        let vga_addr = PhysAddr::new(0xb8000);
+        let frame: PhysFrame<Size4KiB> = PhysFrame::containing_address(vga_addr);
+        assert_eq!(frame.start_address(), vga_addr);
     }
 }

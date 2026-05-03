@@ -1,6 +1,15 @@
+//! Apogee - A minimal x86-64 bare-metal kernel.
+//!
+//! This library provides the core kernel functionality including:
+//! - VGA text buffer output
+//! - Serial port communication
+//! - Interrupt handling (IDT, PIC)
+//! - Global Descriptor Table (GDT) and TSS
+//! - Memory paging and frame allocation
+//! - Dynamic memory allocation (heap) with reference counting
+//! - Test framework for QEMU-based testing
+
 #![no_std]
-// When testing the library itself, suppress the `main` requirement and
-// provide own `_start` entry point below.
 #![cfg_attr(test, no_main)]
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::test_runner)]

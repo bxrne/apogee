@@ -1,3 +1,9 @@
+//! Dynamic memory allocation and heap management.
+//!
+//! This module provides the global allocator implementation using the
+//! `linked_list_allocator` crate, enabling `alloc::Box`, `alloc::Vec`,
+//! and `alloc::Rc` (reference counting) in the bare-metal kernel.
+
 use x86_64::{
     VirtAddr,
     structures::paging::{
@@ -7,11 +13,34 @@ use x86_64::{
 
 use linked_list_allocator::LockedHeap;
 
+/// Global allocator instance for the kernel.
+/// Used by the `alloc` crate to fulfill dynamic memory allocations.
+/// Wrapped in `LockedHeap` to provide thread-safe access via a spinlock.
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
+/// Virtual address where the heap starts.
+/// Chosen to be in a high, unused region of the virtual address space.
 pub const HEAP_START: usize = 0x_4444_4444_0000;
-pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
+
+/// Size of the heap in bytes (100 KiB).
+pub const HEAP_SIZE: usize = 100 * 1024;
+
+/// Initializes the kernel heap by mapping virtual pages to physical frames.
+///
+/// This function:
+/// 1. Creates a range of virtual pages spanning the heap region
+/// 2. Allocates physical frames for each page from the frame allocator
+/// 3. Maps each page to its corresponding frame with read-write permissions
+/// 4. Initializes the global allocator with the heap's virtual address range
+///
+/// # Arguments
+/// * `mapper` - The page table mapper used to create page mappings
+/// * `frame_allocator` - The frame allocator providing physical memory frames
+///
+/// # Returns
+/// * `Ok(())` on successful initialization
+/// * `Err(MapToError)` if page mapping or frame allocation fails
 pub fn init_heap(
     mapper: &mut impl Mapper<Size4KiB>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
@@ -36,4 +65,29 @@ pub fn init_heap(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn test_heap_start_aligned() {
+        assert_eq!(HEAP_START % 4096, 0, "HEAP_START must be page-aligned");
+    }
+
+    #[test_case]
+    fn test_heap_size_multiple_of_page() {
+        assert_eq!(HEAP_SIZE % 4096, 0, "HEAP_SIZE must be multiple of page size");
+    }
+
+    #[test_case]
+    fn test_heap_size_100_kib() {
+        assert_eq!(HEAP_SIZE, 100 * 1024, "HEAP_SIZE should be 100 KiB");
+    }
+
+    #[test_case]
+    fn test_heap_start_address_range() {
+        assert!(HEAP_START > 0x1_0000, "HEAP_START should be in valid address range");
+    }
 }

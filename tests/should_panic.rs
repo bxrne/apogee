@@ -6,7 +6,7 @@
 #![no_std]
 #![no_main]
 
-use apogee::{exit_qemu, serial_print, serial_println, QemuExitCode};
+use apogee::{QemuExitCode, exit_qemu, serial_print, serial_println};
 use core::panic::PanicInfo;
 
 #[unsafe(no_mangle)]

@@ -1,7 +1,7 @@
-use volatile::Volatile;
 use core::fmt::{self, Write};
 use lazy_static::lazy_static;
 use spin::Mutex;
+use volatile::Volatile;
 
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
@@ -134,7 +134,7 @@ impl Write for Writer {
         self.write_string(s);
         Ok(())
     }
-} 
+}
 
 #[macro_export]
 macro_rules! print {

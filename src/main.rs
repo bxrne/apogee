@@ -13,24 +13,26 @@ pub extern "C" fn _start() -> ! {
 
     println!("apogee kernel starting...");
 
-    #[allow(unconditional_recursion)]
-    fn stack_overflow() {
-        stack_overflow();
-        volatile::Volatile::new(0u64).read();
-    }
-    stack_overflow();
+    // #[allow(unconditional_recursion)]
+    // fn stack_overflow() {
+    //     stack_overflow();
+    //     volatile::Volatile::new(0u64).read();
+    // }
+    // stack_overflow();
+
+    println!("It did not crash!");
 
     #[cfg(test)]
     test_main();
 
-    loop {}
+    apogee::hlt_loop();
 }
 
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
-    loop {}
+    apogee::hlt_loop();
 }
 
 #[cfg(test)]

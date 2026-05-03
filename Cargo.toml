@@ -5,14 +5,10 @@ edition = "2024"
 
 [[bin]]
 name = "apogee"
-test = false
+test = true 
 bench = false
 
-[profile.dev]
-panic = "abort"
 
-[profile.release]
-panic = "abort"
 
 [dependencies]
 bootloader = "0.9"

@@ -1,5 +1,7 @@
 # apogee
 
+![CI](https://github.com/bxrne/apogee/actions/workflows/ci.yml/badge.svg)
+
 A minimal x86-64 bare-metal kernel written in Rust. Runs directly on hardware or in QEMU with no underlying OS. Built to explore foundational kernel concepts: bootable binaries, VGA text output, serial I/O, CPU exception handling, and memory segmentation — all without the standard library.
 
 ## Requirements

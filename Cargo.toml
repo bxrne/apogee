@@ -15,6 +15,10 @@ name = "basic_boot"
 name = "should_panic"
 harness = false
 
+[[test]]
+name = "stack_overflow"
+harness = false
+
 [profile.dev]
 panic = "abort"
 

@@ -9,16 +9,20 @@ use core::panic::PanicInfo;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    println!("apogee kernel starting...");
     apogee::init();
 
-    println!("Breakpoint test:");
-    x86_64::instructions::interrupts::int3();
+    println!("apogee kernel starting...");
+
+    #[allow(unconditional_recursion)]
+    fn stack_overflow() {
+        stack_overflow();
+        volatile::Volatile::new(0u64).read();
+    }
+    stack_overflow();
 
     #[cfg(test)]
     test_main();
 
-    println!("did not crash!");
     loop {}
 }
 

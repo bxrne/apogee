@@ -5,16 +5,40 @@ edition = "2024"
 
 [[bin]]
 name = "apogee"
-test = true 
+test = true
 bench = false
 
+[[test]]
+name = "basic_boot"
 
+[[test]]
+name = "should_panic"
+harness = false
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[package.metadata.bootimage]
+run-args  = ["-serial", "stdio", "--no-reboot"]
+test-args = [
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-serial", "stdio",
+    "-display", "none",
+    "--no-reboot",
+]
+test-success-exit-code = 33          # (0x10 << 1) | 1
+test-timeout = 300
 
 [dependencies]
-bootloader = "0.9"
-volatile = "0.2.6"
-spin = "0.5.2"
+bootloader  = "0.9"
+volatile    = "0.2.6"
+spin        = "0.5.2"
+uart_16550  = "0.2"
+x86_64      = "0.14.2"
 
 [dependencies.lazy_static]
-version = "1.0"
+version  = "1.0"
 features = ["spin_no_std"]

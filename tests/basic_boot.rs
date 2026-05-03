@@ -1,3 +1,7 @@
+//! Integration test: basic boot.
+//! Verifies the kernel boots and that `println!` works without panicking.
+//! Uses the shared test infrastructure from the `apogee` library.
+
 #![no_std]
 #![no_main]
 #![feature(custom_test_frameworks)]
@@ -9,23 +13,18 @@ use core::panic::PanicInfo;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    println!("Hello World{}","!");
-
-    #[cfg(test)]
     test_main();
-
     loop {}
 }
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
-    loop {}
-}
-
-#[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     apogee::test_panic_handler(info)
+}
+
+// Tests
+
+#[test_case]
+fn test_println() {
+    println!("test_println output");
 }

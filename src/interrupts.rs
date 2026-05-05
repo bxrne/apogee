@@ -49,6 +49,12 @@ impl InterruptIndex {
 
 pub fn init_idt() {
     IDT.load();
+    crate::kdebugln!(
+        "idt ready: timer={} keyboard={} syscall={:#x}",
+        InterruptIndex::Timer.as_u8(),
+        InterruptIndex::Keyboard.as_u8(),
+        SYSCALL_VECTOR
+    );
 }
 
 // Handlers for CPU exceptions and hardware interrupts
@@ -104,7 +110,9 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 
 // Placeholder syscall interrupt handler for `int 0x80`.
 // Software interrupts do not require PIC EOI.
-extern "x86-interrupt" fn syscall_interrupt_handler(_stack_frame: InterruptStackFrame) {}
+extern "x86-interrupt" fn syscall_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    crate::kdebugln!("syscall interrupt hit (stub)");
+}
 
 #[test_case]
 fn test_breakpoint_exception() {

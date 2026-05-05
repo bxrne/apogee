@@ -62,17 +62,26 @@ fn print_banner(boot_info: &BootInfo) {
 /// Main entry point for the kernel.
 /// Called by the bootloader after it sets up initial memory and boot info.
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
+    apogee::kinfoln!("boot: entered kernel_main");
     apogee::init();
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
+    apogee::kdebugln!("memory: offset page table initialized");
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
+    apogee::kdebugln!("memory: boot frame allocator initialized");
 
     let page = Page::containing_address(VirtAddr::new(0));
     memory::create_example_mapping(page, &mut mapper, &mut frame_allocator);
+    apogee::kdebugln!("memory: example mapping established");
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+    apogee::kinfoln!(
+        "heap initialized: {} KiB @ {:#x}",
+        allocator::HEAP_SIZE / 1024,
+        allocator::HEAP_START
+    );
 
     print_banner(boot_info);
 
@@ -85,33 +94,30 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // asynchronous keyboard handler. `Executor::run` halts the CPU between
     // wakeups and never returns.
     let mut executor = CoOpExecuter::new();
+    apogee::kinfoln!("executor: spawning startup tasks");
     executor.spawn(Task::new(example_task()));
     executor.spawn(Task::new(keyboard::print_keypresses()));
+    apogee::kinfoln!("startup complete: entering executor loop");
     executor.run();
 }
 
 fn sample_heap_allocations() {
-    // Test heap allocations
+    apogee::kdebugln!("heap smoke test: allocating Box, Vec, and Rc");
+
     let heap_value = Box::new(41);
-    println!("heap_value at {:p}", heap_value);
+    apogee::kdebugln!("heap_value at {:p}", heap_value);
 
     let mut vec = Vec::new();
     for i in 0..500 {
         vec.push(i);
     }
-    println!("vec at {:p}", vec.as_slice());
+    apogee::kdebugln!("vec backing slice at {:p}", vec.as_slice());
 
     let reference_counted = Rc::new([1, 2, 3]);
     let cloned_reference = reference_counted.clone();
-    println!(
-        "current reference count is {}",
-        Rc::strong_count(&cloned_reference)
-    );
+    apogee::kdebugln!("rc strong_count={} before drop", Rc::strong_count(&cloned_reference));
     core::mem::drop(reference_counted);
-    println!(
-        "reference count is {} now",
-        Rc::strong_count(&cloned_reference)
-    );
+    apogee::kdebugln!("rc strong_count={} after drop", Rc::strong_count(&cloned_reference));
 }
 
 /// Trivial async function used to demonstrate the executor end-to-end.
@@ -123,7 +129,7 @@ async fn async_number() -> u32 {
 /// state-machine + executor pipeline works for a non-trivial future.
 async fn example_task() {
     let number = async_number().await;
-    println!("async number: {}", number);
+    apogee::kdebugln!("example async task completed with {}", number);
 }
 
 #[cfg(not(test))]

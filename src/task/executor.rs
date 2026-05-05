@@ -67,6 +67,11 @@ impl CoOpExecuter {
             panic!("task with same ID already in tasks");
         }
         self.task_queue.push(task_id).expect("queue full");
+        crate::kdebugln!(
+            "executor: queued task {} (tasks={})",
+            task_id.as_u64(),
+            self.tasks.len()
+        );
     }
 
     /// Number of tasks currently owned by the executor (whether ready or
@@ -103,8 +108,8 @@ impl CoOpExecuter {
                 .or_insert_with(|| TaskWaker::new(task_id, task_queue.clone()));
 
             if started_tasks.insert(task_id) {
-                crate::println!(
-                    "[task {}] started (total tasks: {})",
+                crate::kinfoln!(
+                    "task {} started (total tasks: {})",
                     task_id.as_u64(),
                     total_tasks
                 );
@@ -116,6 +121,11 @@ impl CoOpExecuter {
                     tasks.remove(&task_id);
                     waker_cache.remove(&task_id);
                     started_tasks.remove(&task_id);
+                    crate::kdebugln!(
+                        "task {} completed (remaining tasks: {})",
+                        task_id.as_u64(),
+                        tasks.len()
+                    );
                 }
                 Poll::Pending => {}
             }
@@ -128,6 +138,7 @@ impl CoOpExecuter {
     /// Returns `!` because, in our kernel, the keyboard task is intended to
     /// run for the lifetime of the system.
     pub fn run(&mut self) -> ! {
+        crate::kinfoln!("executor: run loop started");
         loop {
             self.run_ready_tasks();
             self.sleep_if_idle();

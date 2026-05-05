@@ -25,6 +25,7 @@ use bootloader::{BootInfo, entry_point};
 pub mod allocator;
 pub mod gdt;
 pub mod interrupts;
+pub mod logger;
 pub mod memory;
 pub mod scheduler;
 pub mod serial;
@@ -118,8 +119,19 @@ pub fn hlt_loop() -> ! {
 }
 
 pub fn init() {
+    #[cfg(not(test))]
+    crate::kinfoln!("init: loading GDT");
     gdt::init();
+
+    #[cfg(not(test))]
+    crate::kinfoln!("init: loading IDT");
     interrupts::init_idt();
+
+    #[cfg(not(test))]
+    crate::kinfoln!("init: initializing PIC");
     unsafe { interrupts::PICS.lock().initialize() };
+
+    #[cfg(not(test))]
+    crate::kinfoln!("init: enabling interrupts");
     x86_64::instructions::interrupts::enable();
 }

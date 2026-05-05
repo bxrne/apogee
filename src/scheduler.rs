@@ -12,6 +12,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 /// Global scheduler instance.
 pub static SCHEDULER: Locked<Scheduler> = Locked::new(Scheduler::new());
 
+const TICK_LOG_INTERVAL: u64 = 200;
+
 pub struct Scheduler {
     ready_queue: VecDeque<TaskId>,
     tick_count: AtomicU64,
@@ -28,11 +30,21 @@ impl Scheduler {
     /// Enqueue a task by id (derived from the task).
     pub fn add_task(&mut self, task: &Task) {
         self.ready_queue.push_back(task.id());
+        crate::kdebugln!(
+            "scheduler: enqueued task {} (ready={})",
+            task.id().as_u64(),
+            self.ready_queue.len()
+        );
     }
 
     /// Enqueue a known task id.
     pub fn push_task_id(&mut self, task_id: TaskId) {
         self.ready_queue.push_back(task_id);
+        crate::kdebugln!(
+            "scheduler: enqueued task {} (ready={})",
+            task_id.as_u64(),
+            self.ready_queue.len()
+        );
     }
 
     /// Pop the next runnable task id (round-robin FIFO style).
@@ -51,7 +63,14 @@ impl Scheduler {
 
     /// Called from the timer interrupt.
     pub fn tick(&self) {
-        self.tick_count.fetch_add(1, Ordering::Relaxed);
+        let ticks = self.tick_count.fetch_add(1, Ordering::Relaxed) + 1;
+        if ticks % TICK_LOG_INTERVAL == 0 {
+            crate::kdebugln!(
+                "scheduler tick {} (ready queue: {})",
+                ticks,
+                self.ready_queue.len()
+            );
+        }
     }
 
     pub fn ticks(&self) -> u64 {

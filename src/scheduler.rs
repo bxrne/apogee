@@ -123,7 +123,9 @@ mod tests {
         let id = make_task_id();
 
         scheduler.push_task_id(id);
-        let popped = scheduler.pop_next_task().expect("queue should not be empty");
+        let popped = scheduler
+            .pop_next_task()
+            .expect("queue should not be empty");
         scheduler.requeue_task(popped);
 
         assert_eq!(scheduler.pop_next_task(), Some(id));

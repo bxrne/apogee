@@ -34,8 +34,8 @@ pub struct CoOpExecuter {
     /// reference count from being decremented inside the interrupt handler,
     /// which would otherwise risk dropping into the allocator there.
     waker_cache: BTreeMap<TaskId, Waker>,
-    /// Tracks tasks that have already been started (first poll happened), so
-    /// we can emit a startup log exactly once per task.
+    /// Tracks tasks that have already been started (first poll happened), allowing
+    /// a startup log to be emitted exactly once per task.
     started_tasks: BTreeSet<TaskId>,
 }
 
@@ -214,7 +214,6 @@ impl Wake for TaskWaker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task::Task;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     #[test_case]

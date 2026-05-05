@@ -1,7 +1,7 @@
 //! Asynchronous keyboard input pipeline.
 //!
 //! The hardware keyboard interrupt fires from inside an interrupt handler
-//! that *must not* allocate or block. To keep the handler tiny we split the
+//! that *must not* allocate or block. To keep the handler tiny, the work is split
 //! work in two:
 //!
 //! 1. The interrupt handler reads the scancode byte and pushes it onto
@@ -108,7 +108,7 @@ impl Stream for ScancodeStream {
         WAKER.register(cx.waker());
         match queue.pop() {
             Some(scancode) => {
-                // Got one after all — clear the waker so we don't get a
+                // Got one after all — the waker is cleared so a
                 // spurious wake on the next interrupt.
                 WAKER.take();
                 Poll::Ready(Some(scancode))
@@ -158,9 +158,9 @@ mod tests {
     #[test_case]
     fn test_add_scancode_does_not_panic_when_queue_uninitialized() {
         // The interrupt handler may fire before any task has constructed a
-        // `ScancodeStream`. In that case we want a printed warning, not a
-        // panic. We can't easily assert on the warning, but we can assert
-        // the call returns normally.
+        // `ScancodeStream`. In that case a printed warning is desired, not a
+        // panic. The warning cannot easily be asserted on, but the
+        // call is verified to return normally.
         add_scancode(0xAB);
     }
 }

@@ -66,7 +66,7 @@ impl SimpleExecutor {
 /// Builds a [`Waker`] whose `wake`/`wake_by_ref` operations are no-ops.
 ///
 /// The simple executor does not look at waker notifications, so a placeholder
-/// waker that satisfies the type system is all we need.
+/// waker that satisfies the type system is all that is needed.
 fn dummy_waker() -> Waker {
     // SAFETY: the vtable functions below uphold the `RawWaker` contract — the
     // `clone` callback returns a fresh, equivalent `RawWaker`, and `wake`,
@@ -123,7 +123,7 @@ mod tests {
     #[test_case]
     fn test_dummy_waker_is_constructible() {
         // Confirms the waker can be built without UB and forwarded into a
-        // Context. We don't actually wake anything — the simple executor
+        // Context. Nothing is actually woken — the simple executor
         // doesn't observe wake notifications.
         let waker = dummy_waker();
         let _cx = Context::from_waker(&waker);

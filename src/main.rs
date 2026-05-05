@@ -115,9 +115,15 @@ fn sample_heap_allocations() {
 
     let reference_counted = Rc::new([1, 2, 3]);
     let cloned_reference = reference_counted.clone();
-    apogee::kdebugln!("rc strong_count={} before drop", Rc::strong_count(&cloned_reference));
+    apogee::kdebugln!(
+        "rc strong_count={} before drop",
+        Rc::strong_count(&cloned_reference)
+    );
     core::mem::drop(reference_counted);
-    apogee::kdebugln!("rc strong_count={} after drop", Rc::strong_count(&cloned_reference));
+    apogee::kdebugln!(
+        "rc strong_count={} after drop",
+        Rc::strong_count(&cloned_reference)
+    );
 }
 
 /// Trivial async function used to demonstrate the executor end-to-end.
@@ -143,4 +149,24 @@ fn panic(info: &PanicInfo) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     apogee::test_panic_handler(info)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn test_banner_art_is_non_empty() {
+        assert!(!BANNER_ART.is_empty());
+    }
+
+    #[test_case]
+    fn test_banner_art_contains_apogee() {
+        assert!(BANNER_ART.contains("apogee"));
+    }
+
+    #[test_case]
+    fn test_banner_art_contains_kernel_marker() {
+        assert!(BANNER_ART.contains("kernel"));
+    }
 }

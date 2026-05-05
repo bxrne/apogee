@@ -48,7 +48,7 @@ pub fn create_example_mapping(
     let flags = Flags::PRESENT | Flags::WRITABLE;
 
     let map_to_result = unsafe {
-        // FIXME: this is not safe, we do it only for testing
+        // FIXME: this is not safe; it is done only for testing
         mapper.map_to(page, frame, flags, frame_allocator)
     };
     map_to_result.expect("map_to failed").flush();

@@ -105,7 +105,6 @@ impl LinkedListAllocator {
         }
     }
 
-
     // Removes the last node from the linked list and returns its value. Returns `None` if the list
     // is empty.
     pub fn pop_value(&mut self) -> Option<usize> {

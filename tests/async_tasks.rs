@@ -77,7 +77,6 @@ async fn bump_executor() {
     EXECUTOR_COUNTER.fetch_add(1, Ordering::SeqCst);
 }
 
-
 #[test_case]
 fn simple_executor_runs_multiple_tasks() {
     SIMPLE_COUNTER.store(0, Ordering::SeqCst);

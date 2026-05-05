@@ -63,3 +63,51 @@ unsafe impl GlobalAlloc for Locked<BumpAllocator> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::alloc::Layout;
+
+    #[test_case]
+    fn test_bump_allocator_empty() {
+        let allocator = BumpAllocator::empty();
+        assert_eq!(allocator.heap_start, 0);
+        assert_eq!(allocator.heap_end, 0);
+        assert_eq!(allocator.next, 0);
+        assert_eq!(allocator.allocations, 0);
+    }
+
+    #[test_case]
+    fn test_bump_allocator_init() {
+        let mut allocator = BumpAllocator::empty();
+        unsafe {
+            allocator.init(0x1000, 4096);
+        }
+        assert_eq!(allocator.heap_start, 0x1000);
+        assert_eq!(allocator.heap_end, 0x1000 + 4096);
+        assert_eq!(allocator.next, 0x1000);
+        assert_eq!(allocator.allocations, 0);
+    }
+
+    #[test_case]
+    fn test_align_up_function() {
+        assert_eq!(align_up(0, 8), 0);
+        assert_eq!(align_up(1, 8), 8);
+        assert_eq!(align_up(8, 8), 8);
+        assert_eq!(align_up(9, 8), 16);
+        assert_eq!(align_up(1000, 4096), 4096);
+    }
+
+    #[test_case]
+    fn test_bump_allocator_alignment() {
+        let mut allocator = BumpAllocator::empty();
+        unsafe {
+            allocator.init(0x1000, 4096);
+        }
+        let layout = Layout::from_size_align(8, 16).unwrap();
+        let ptr = allocator.alloc(layout);
+        assert!(!ptr.is_null());
+        assert_eq!(ptr as usize % 16, 0);
+    }
+}

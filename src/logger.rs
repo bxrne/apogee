@@ -10,8 +10,9 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use spin::MutexGuard;
 use uart_16550::SerialPort;
 
+use crate::serial::SERIAL1;
 use crate::vga_buffer::{
-    Color, DEFAULT_BACKGROUND, DEFAULT_FOREGROUND, Writer as VgaWriter,
+    Color, DEFAULT_BACKGROUND, DEFAULT_FOREGROUND, WRITER, Writer as VgaWriter,
 };
 
 static DROPPED_MESSAGES: AtomicU64 = AtomicU64::new(0);
@@ -66,8 +67,8 @@ impl Write for DualWriter<'_> {
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
-    let vga = crate::vga_buffer::WRITER.try_lock();
-    let serial = crate::serial::SERIAL1.try_lock();
+    let vga = WRITER.try_lock();
+    let serial = SERIAL1.try_lock();
 
     if vga.is_none() && serial.is_none() {
         DROPPED_MESSAGES.fetch_add(1, Ordering::Relaxed);
@@ -80,8 +81,8 @@ pub fn _print(args: fmt::Arguments) {
 
 #[doc(hidden)]
 pub fn _log(level: LogLevel, args: fmt::Arguments) {
-    let vga = crate::vga_buffer::WRITER.try_lock();
-    let serial = crate::serial::SERIAL1.try_lock();
+    let vga = WRITER.try_lock();
+    let serial = SERIAL1.try_lock();
 
     if vga.is_none() && serial.is_none() {
         DROPPED_MESSAGES.fetch_add(1, Ordering::Relaxed);

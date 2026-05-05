@@ -1,6 +1,7 @@
 use crate::gdt;
-use crate::scheduler;
 use crate::println;
+use crate::scheduler;
+use crate::task::keyboard::add_scancode;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
@@ -100,7 +101,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     // Doing the decode here would be slow and would block other interrupts.
     let mut port = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
-    crate::task::keyboard::add_scancode(scancode);
+    add_scancode(scancode);
 
     unsafe {
         PICS.lock()

@@ -113,8 +113,8 @@ mod tests {
 
     #[test_case]
     fn test_task_runs_future_side_effects() {
-        // Drive a trivial future to completion using a no-op waker so we know
-        // `Task::poll` actually advances the underlying state machine.
+        // Drive a trivial future to completion using a no-op waker to verify
+        // that `Task::poll` actually advances the underlying state machine.
         use core::task::{Context, RawWaker, RawWakerVTable, Waker};
 
         static RAN: AtomicBool = AtomicBool::new(false);

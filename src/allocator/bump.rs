@@ -105,8 +105,9 @@ mod tests {
         unsafe {
             allocator.init(0x1000, 4096);
         }
+        let locked_allocator = Locked::new(allocator);
         let layout = Layout::from_size_align(8, 16).unwrap();
-        let ptr = allocator.alloc(layout);
+        let ptr = unsafe { locked_allocator.alloc(layout) };
         assert!(!ptr.is_null());
         assert_eq!(ptr as usize % 16, 0);
     }

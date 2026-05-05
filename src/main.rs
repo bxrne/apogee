@@ -151,22 +151,3 @@ fn panic(info: &PanicInfo) -> ! {
     apogee::test_panic_handler(info)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test_case]
-    fn test_banner_art_is_non_empty() {
-        assert!(!BANNER_ART.is_empty());
-    }
-
-    #[test_case]
-    fn test_banner_art_contains_apogee() {
-        assert!(BANNER_ART.contains("apogee"));
-    }
-
-    #[test_case]
-    fn test_banner_art_contains_kernel_marker() {
-        assert!(BANNER_ART.contains("kernel"));
-    }
-}

@@ -23,7 +23,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use apogee::allocator;
 use apogee::task::Task;
-use apogee::task::executor::Executor;
+use apogee::task::executor::CoOpExecuter;
 use apogee::task::simple_executor::SimpleExecutor;
 use bootloader::BootInfo;
 use core::future::Future;
@@ -77,7 +77,6 @@ async fn bump_executor() {
     EXECUTOR_COUNTER.fetch_add(1, Ordering::SeqCst);
 }
 
-// ---- tests ----------------------------------------------------------------
 
 #[test_case]
 fn simple_executor_runs_multiple_tasks() {
@@ -93,7 +92,7 @@ fn simple_executor_runs_multiple_tasks() {
 #[test_case]
 fn executor_runs_and_drains_ready_tasks() {
     EXECUTOR_COUNTER.store(0, Ordering::SeqCst);
-    let mut exec = Executor::new();
+    let mut exec = CoOpExecuter::new();
     for _ in 0..3 {
         exec.spawn(Task::new(bump_executor()));
     }
@@ -142,7 +141,7 @@ fn pending_task_is_repolled_after_wake() {
         }
     }
 
-    let mut exec = Executor::new();
+    let mut exec = CoOpExecuter::new();
     exec.spawn(Task::new(async {
         WakeOnSecondPoll.await;
     }));
@@ -192,7 +191,7 @@ fn arc_array_queue_round_trip() {
 /// `run()`, we call into the executor through an inherent method we exposed
 /// on the `Executor` type for tests. This wrapper centralises the call so
 /// the rest of the test file stays readable.
-fn drive_until_idle(exec: &mut Executor, max_iterations: usize) {
+fn drive_until_idle(exec: &mut CoOpExecuter, max_iterations: usize) {
     for _ in 0..max_iterations {
         let before = exec.task_count();
         exec.run_ready_tasks_for_test();

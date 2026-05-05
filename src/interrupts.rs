@@ -1,5 +1,6 @@
 use crate::gdt;
-use crate::{print, println};
+use crate::scheduler;
+use crate::println;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
@@ -8,6 +9,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 // range is 32-47 for hardware interrupts (IRQs)
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
+pub const SYSCALL_VECTOR: u8 = 0x80;
 
 pub static PICS: spin::Mutex<ChainedPics> =
     spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
@@ -23,6 +25,7 @@ lazy_static! {
         }
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
+        idt[SYSCALL_VECTOR as usize].set_handler_fn(syscall_interrupt_handler);
         idt
     };
 }
@@ -32,7 +35,6 @@ lazy_static! {
 pub enum InterruptIndex {
     Timer = PIC_1_OFFSET,
     Keyboard,
-    // TODO: add more interrupts here
 }
 
 impl InterruptIndex {
@@ -49,10 +51,18 @@ pub fn init_idt() {
     IDT.load();
 }
 
+// Handlers for CPU exceptions and hardware interrupts
+
+// The breakpoint handler is used for testing and debugging. It will be triggered by the `int3`
+// instruction.
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
+// The double fault handler is used to handle double faults, which occur when an exception is
+// triggered while trying to call an exception handler. This can happen, for example, if the stack
+// overflows while trying to handle a page fault. The double fault handler must be marked as
+// `noreturn` because it will not return to the caller.
 extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
@@ -63,8 +73,11 @@ extern "x86-interrupt" fn double_fault_handler(
     );
 }
 
+// The timer interrupt handler is called by the hardware timer at regular intervals (e.g., every
+// 10ms).
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    print!(".");
+    // Keep IRQ work minimal: only tick scheduler state here.
+    scheduler::SCHEDULER.lock().tick();
 
     unsafe {
         PICS.lock()
@@ -72,6 +85,8 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     }
 }
 
+// The keyboard interrupt handler is called by the keyboard controller when a key is pressed or
+// released.
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     use x86_64::instructions::port::Port;
 
@@ -86,6 +101,10 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
             .notify_end_of_interrupt(InterruptIndex::Keyboard.as_u8());
     }
 }
+
+// Placeholder syscall interrupt handler for `int 0x80`.
+// Software interrupts do not require PIC EOI.
+extern "x86-interrupt" fn syscall_interrupt_handler(_stack_frame: InterruptStackFrame) {}
 
 #[test_case]
 fn test_breakpoint_exception() {

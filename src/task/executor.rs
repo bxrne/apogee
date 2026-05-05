@@ -9,7 +9,7 @@
 
 use core::task::{Context, Poll, Waker};
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 use alloc::task::Wake;
 use crossbeam_queue::ArrayQueue;
@@ -22,7 +22,7 @@ use super::{Task, TaskId};
 const TASK_QUEUE_CAPACITY: usize = 100;
 
 /// Cooperative task executor with waker support.
-pub struct Executor {
+pub struct CoOpExecuter {
     /// All currently spawned tasks, indexed by id for O(log n) lookup when a
     /// waker fires.
     tasks: BTreeMap<TaskId, Task>,
@@ -34,21 +34,25 @@ pub struct Executor {
     /// reference count from being decremented inside the interrupt handler,
     /// which would otherwise risk dropping into the allocator there.
     waker_cache: BTreeMap<TaskId, Waker>,
+    /// Tracks tasks that have already been started (first poll happened), so
+    /// we can emit a startup log exactly once per task.
+    started_tasks: BTreeSet<TaskId>,
 }
 
-impl Default for Executor {
+impl Default for CoOpExecuter {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Executor {
+impl CoOpExecuter {
     /// Builds a new executor with empty task and waker collections.
     pub fn new() -> Self {
-        Executor {
+        CoOpExecuter {
             tasks: BTreeMap::new(),
             task_queue: Arc::new(ArrayQueue::new(TASK_QUEUE_CAPACITY)),
             waker_cache: BTreeMap::new(),
+            started_tasks: BTreeSet::new(),
         }
     }
 
@@ -83,9 +87,11 @@ impl Executor {
             tasks,
             task_queue,
             waker_cache,
+            started_tasks,
         } = self;
 
         while let Some(task_id) = task_queue.pop() {
+            let total_tasks = tasks.len();
             let task = match tasks.get_mut(&task_id) {
                 Some(task) => task,
                 // Wake fired for a task that has already finished and been
@@ -95,11 +101,21 @@ impl Executor {
             let waker = waker_cache
                 .entry(task_id)
                 .or_insert_with(|| TaskWaker::new(task_id, task_queue.clone()));
+
+            if started_tasks.insert(task_id) {
+                crate::println!(
+                    "[task {}] started (total tasks: {})",
+                    task_id.as_u64(),
+                    total_tasks
+                );
+            }
+
             let mut context = Context::from_waker(waker);
             match task.poll(&mut context) {
                 Poll::Ready(()) => {
                     tasks.remove(&task_id);
                     waker_cache.remove(&task_id);
+                    started_tasks.remove(&task_id);
                 }
                 Poll::Pending => {}
             }
@@ -192,13 +208,13 @@ mod tests {
 
     #[test_case]
     fn test_new_executor_has_no_tasks() {
-        let exec = Executor::new();
+        let exec = CoOpExecuter::new();
         assert_eq!(exec.task_count(), 0);
     }
 
     #[test_case]
     fn test_spawn_inserts_task_and_enqueues_id() {
-        let mut exec = Executor::new();
+        let mut exec = CoOpExecuter::new();
         let task = Task::new(async {});
         let id = task.id();
         exec.spawn(task);
@@ -212,7 +228,7 @@ mod tests {
         static COUNT: AtomicUsize = AtomicUsize::new(0);
         COUNT.store(0, Ordering::SeqCst);
 
-        let mut exec = Executor::new();
+        let mut exec = CoOpExecuter::new();
         for _ in 0..3 {
             exec.spawn(Task::new(async {
                 COUNT.fetch_add(1, Ordering::SeqCst);
@@ -239,7 +255,7 @@ mod tests {
     fn test_run_ready_tasks_ignores_unknown_ids() {
         // Pushing an id with no corresponding task must not crash; it just
         // gets skipped on the next poll.
-        let mut exec = Executor::new();
+        let mut exec = CoOpExecuter::new();
         exec.task_queue
             .push(TaskId::new())
             .expect("queue should accept push");

@@ -104,6 +104,27 @@ impl LinkedListAllocator {
             self.next = self.heap_start;
         }
     }
+
+
+    // Removes the last node from the linked list and returns its value. Returns `None` if the list
+    // is empty.
+    pub fn pop_value(&mut self) -> Option<usize> {
+        let mut current = self.heap_start as *mut ListNode;
+        let mut prev: Option<&mut ListNode> = None;
+
+        while let Some(next) = unsafe { (*current).get_next() } {
+            prev = Some(unsafe { &mut *current });
+            current = next as *mut ListNode;
+        }
+
+        if let Some(prev_node) = prev {
+            let value = unsafe { (*current).get_value() };
+            prev_node.set_next(None);
+            Some(value)
+        } else {
+            None
+        }
+    }
 }
 
 unsafe impl GlobalAlloc for Locked<LinkedListAllocator> {

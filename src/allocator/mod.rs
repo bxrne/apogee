@@ -11,7 +11,7 @@ use x86_64::{
     },
 };
 
-pub mod bump;
+mod bump;
 
 use bump::BumpAllocator;
 
@@ -67,18 +67,18 @@ pub fn init_heap(
 }
 
 // A simple wrapper around `spin::Mutex` to provide thread-safe access to the global allocator.
-pub struct Locked<A> {
+pub(crate) struct Locked<A> {
     inner: spin::Mutex<A>,
 }
 
 impl<A> Locked<A> {
-    pub const fn new(inner: A) -> Self {
+    pub(crate) const fn new(inner: A) -> Self {
         Locked {
             inner: spin::Mutex::new(inner),
         }
     }
 
-    pub fn lock(&self) -> spin::MutexGuard<'_, A> {
+    pub(crate) fn lock(&self) -> spin::MutexGuard<'_, A> {
         self.inner.lock()
     }
 }

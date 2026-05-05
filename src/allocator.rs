@@ -11,13 +11,12 @@ use x86_64::{
     },
 };
 
-use linked_list_allocator::LockedHeap;
+pub mod bump;
 
-/// Global allocator instance for the kernel.
-/// Used by the `alloc` crate to fulfill dynamic memory allocations.
-/// Wrapped in `LockedHeap` to provide thread-safe access via a spinlock.
+use bump::BumpAllocator;
+
 #[global_allocator]
-static ALLOCATOR: LockedHeap = LockedHeap::empty();
+static ALLOCATOR: Locked<BumpAllocator> = Locked::new(BumpAllocator::empty());
 
 /// Virtual address where the heap starts.
 /// Chosen to be in a high, unused region of the virtual address space.
@@ -65,6 +64,30 @@ pub fn init_heap(
     }
 
     Ok(())
+}
+
+// A simple wrapper around `spin::Mutex` to provide thread-safe access to the global allocator.
+pub struct Locked<A> {
+    inner: spin::Mutex<A>,
+}
+
+impl<A> Locked<A> {
+    pub const fn new(inner: A) -> Self {
+        Locked {
+            inner: spin::Mutex::new(inner),
+        }
+    }
+
+    pub fn lock(&self) -> spin::MutexGuard<'_, A> {
+        self.inner.lock()
+    }
+}
+
+/// Align the given address `addr` upwards to alignment `align`.
+///
+/// Requires that `align` is a power of two.
+fn align_up(addr: usize, align: usize) -> usize {
+    (addr + align - 1) & !(align - 1)
 }
 
 #[cfg(test)]

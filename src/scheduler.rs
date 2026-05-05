@@ -77,3 +77,64 @@ impl Scheduler {
         self.tick_count.load(Ordering::Relaxed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn test_new_scheduler_is_empty() {
+        let scheduler = Scheduler::new();
+        assert_eq!(scheduler.queue_len(), 0);
+        assert_eq!(scheduler.ticks(), 0);
+    }
+
+    fn make_task_id() -> TaskId {
+        Task::new(async {}).id()
+    }
+
+    #[test_case]
+    fn test_push_and_pop_task_ids_fifo() {
+        let mut scheduler = Scheduler::new();
+        scheduler.push_task_id(make_task_id());
+        scheduler.push_task_id(make_task_id());
+
+        let first = scheduler.pop_next_task().expect("first task missing");
+        let second = scheduler.pop_next_task().expect("second task missing");
+
+        assert!(first.as_u64() < second.as_u64());
+        assert_eq!(scheduler.pop_next_task(), None);
+    }
+
+    #[test_case]
+    fn test_add_task_enqueues_task_id() {
+        let mut scheduler = Scheduler::new();
+        let task = Task::new(async {});
+        let id = task.id();
+
+        scheduler.add_task(&task);
+        assert_eq!(scheduler.queue_len(), 1);
+        assert_eq!(scheduler.pop_next_task(), Some(id));
+    }
+
+    #[test_case]
+    fn test_requeue_puts_task_back() {
+        let mut scheduler = Scheduler::new();
+        let id = make_task_id();
+
+        scheduler.push_task_id(id);
+        let popped = scheduler.pop_next_task().expect("queue should not be empty");
+        scheduler.requeue_task(popped);
+
+        assert_eq!(scheduler.pop_next_task(), Some(id));
+        assert_eq!(scheduler.queue_len(), 0);
+    }
+
+    #[test_case]
+    fn test_tick_increments_counter() {
+        let scheduler = Scheduler::new();
+        scheduler.tick();
+        scheduler.tick();
+        assert_eq!(scheduler.ticks(), 2);
+    }
+}

@@ -25,6 +25,9 @@ name = "heap_allocation"
 [[test]]
 name = "async_tasks"
 
+[[test]]
+name = "runtime_observability"
+
 [profile.dev]
 panic = "abort"
 

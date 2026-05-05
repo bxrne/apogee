@@ -115,6 +115,23 @@ extern "x86-interrupt" fn syscall_interrupt_handler(_stack_frame: InterruptStack
 }
 
 #[test_case]
+fn test_pic_offsets_are_standard() {
+    assert_eq!(PIC_1_OFFSET, 32);
+    assert_eq!(PIC_2_OFFSET, 40);
+}
+
+#[test_case]
+fn test_interrupt_index_values() {
+    assert_eq!(InterruptIndex::Timer.as_u8(), PIC_1_OFFSET);
+    assert_eq!(InterruptIndex::Keyboard.as_u8(), PIC_1_OFFSET + 1);
+}
+
+#[test_case]
+fn test_syscall_vector_value() {
+    assert_eq!(SYSCALL_VECTOR, 0x80);
+}
+
+#[test_case]
 fn test_breakpoint_exception() {
     x86_64::instructions::interrupts::int3();
 }

@@ -26,13 +26,13 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    fn as_str(self) -> &'static str {
+    fn prefix(self) -> &'static str {
         match self {
-            LogLevel::Trace => "TRACE",
-            LogLevel::Debug => "DEBUG",
-            LogLevel::Info => "INFO",
-            LogLevel::Warn => "WARN",
-            LogLevel::Error => "ERROR",
+            LogLevel::Trace => "TRACE>",
+            LogLevel::Debug => "DEBUG>",
+            LogLevel::Info => "INFO>",
+            LogLevel::Warn => "WARN>",
+            LogLevel::Error => "ERROR>",
         }
     }
 
@@ -94,7 +94,7 @@ pub fn _log(level: LogLevel, args: fmt::Arguments) {
         vga.set_color(level.vga_color(), DEFAULT_BACKGROUND);
     }
 
-    let _ = writer.write_fmt(format_args!("[{}] ", level.as_str()));
+    let _ = writer.write_fmt(format_args!("{}", level.prefix()));
     let _ = writer.write_fmt(args);
 
     if let Some(vga) = writer.vga.as_mut() {
@@ -183,4 +183,35 @@ macro_rules! kerror {
 macro_rules! kerrorln {
     () => ($crate::kerror!("\n"));
     ($($arg:tt)*) => ($crate::kerror!("{}\n", format_args!($($arg)*)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn test_log_level_prefixes() {
+        assert_eq!(LogLevel::Trace.prefix(), "TRACE>");
+        assert_eq!(LogLevel::Debug.prefix(), "DEBUG>");
+        assert_eq!(LogLevel::Info.prefix(), "INFO>");
+        assert_eq!(LogLevel::Warn.prefix(), "WARN>");
+        assert_eq!(LogLevel::Error.prefix(), "ERROR>");
+    }
+
+    #[test_case]
+    fn test_log_level_colors() {
+        assert_eq!(LogLevel::Trace.vga_color(), Color::DarkGray);
+        assert_eq!(LogLevel::Debug.vga_color(), Color::LightCyan);
+        assert_eq!(LogLevel::Info.vga_color(), Color::LightGreen);
+        assert_eq!(LogLevel::Warn.vga_color(), Color::Yellow);
+        assert_eq!(LogLevel::Error.vga_color(), Color::LightRed);
+    }
+
+    #[test_case]
+    fn test_dropped_messages_is_monotonic() {
+        let before = dropped_messages();
+        crate::klogln!("logger monotonic dropped counter test");
+        let after = dropped_messages();
+        assert!(after >= before);
+    }
 }

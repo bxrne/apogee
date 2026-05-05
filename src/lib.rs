@@ -135,3 +135,19 @@ pub fn init() {
     crate::kinfoln!("init: enabling interrupts");
     x86_64::instructions::interrupts::enable();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn test_qemu_exit_code_values() {
+        assert_eq!(QemuExitCode::Success as u32, 0x10);
+        assert_eq!(QemuExitCode::Failed as u32, 0x11);
+    }
+
+    #[test_case]
+    fn test_qemu_exit_codes_are_distinct() {
+        assert_ne!(QemuExitCode::Success, QemuExitCode::Failed);
+    }
+}

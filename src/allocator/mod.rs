@@ -12,12 +12,13 @@ use x86_64::{
 };
 
 pub mod bump;
+pub mod fixed_size_block;
 pub mod linkedlist;
 
-use linkedlist::LinkedListAllocator;
+use fixed_size_block::FixedSizeBlockAllocator;
 
 #[global_allocator]
-static ALLOCATOR: Locked<LinkedListAllocator> = Locked::new(LinkedListAllocator::empty());
+static ALLOCATOR: Locked<FixedSizeBlockAllocator> = Locked::new(FixedSizeBlockAllocator::empty());
 
 /// Virtual address where the heap starts.
 /// Chosen to be in a high, unused region of the virtual address space.

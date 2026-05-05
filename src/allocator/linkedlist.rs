@@ -33,6 +33,11 @@ impl ListNode {
         self.next.as_deref_mut()
     }
 
+    /// Removes and returns the `next` link, leaving `self.next` empty.
+    pub fn take_next(&mut self) -> Option<&'static mut ListNode> {
+        self.next.take()
+    }
+
     pub fn set_next(&mut self, next: Option<&'static mut ListNode>) {
         self.next = next;
     }
@@ -70,33 +75,45 @@ impl LinkedListAllocator {
         self.next = heap_start;
         self.allocations = 0;
     }
-}
 
-unsafe impl GlobalAlloc for Locked<LinkedListAllocator> {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let mut alloc = self.lock();
-
-        let alloc_start = align_up(alloc.next, layout.align());
+    /// Inherent allocation routine. Returns null on failure.
+    pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
+        let alloc_start = align_up(self.next, layout.align());
         let alloc_end = match alloc_start.checked_add(layout.size()) {
             Some(end) => end,
             None => return ptr::null_mut(),
         };
 
-        if alloc_end > alloc.heap_end {
+        if alloc_end > self.heap_end {
             ptr::null_mut()
         } else {
-            alloc.next = alloc_end;
-            alloc.allocations += 1;
+            self.next = alloc_end;
+            self.allocations += 1;
             alloc_start as *mut u8
         }
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        let mut alloc = self.lock();
-        alloc.allocations -= 1;
-        if alloc.allocations == 0 {
-            alloc.next = alloc.heap_start;
+    /// Inherent deallocation routine.
+    ///
+    /// # Safety
+    /// `ptr` must have been returned from a previous call to [`alloc`] with
+    /// the same `layout` and must not have been freed already.
+    pub unsafe fn dealloc(&mut self, _ptr: *mut u8, _layout: Layout) {
+        self.allocations -= 1;
+        if self.allocations == 0 {
+            self.next = self.heap_start;
         }
+    }
+}
+
+unsafe impl GlobalAlloc for Locked<LinkedListAllocator> {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        self.lock().alloc(layout)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: forwarded contract from `GlobalAlloc::dealloc`.
+        unsafe { self.lock().dealloc(ptr, layout) }
     }
 }
 

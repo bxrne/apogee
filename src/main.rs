@@ -13,9 +13,10 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
+use apogee::task::Task;
 use apogee::task::executor::Executor;
 use apogee::task::keyboard;
-use apogee::task::Task;
+use apogee::vga_buffer::{self, Color};
 use apogee::{allocator, println};
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
@@ -24,6 +25,39 @@ use x86_64::{VirtAddr, structures::paging::Page};
 mod memory;
 
 entry_point!(kernel_main);
+pub const BANNER_ART: &str = r#"
+ ________  ________  ________  ________  _______   _______      
+|\   __  \|\   __  \|\   __  \|\   ____\|\  ___ \ |\  ___ \     
+\ \  \|\  \ \  \|\  \ \  \|\  \ \  \___|\ \   __/|\ \   __/|    
+ \ \   __  \ \   ____\ \  \\\  \ \  \  __\ \  \_|/_\ \  \_|/__  
+  \ \  \ \  \ \  \___|\ \  \\\  \ \  \|\  \ \  \_|\ \ \  \_|\ \ 
+   \ \__\ \__\ \__\    \ \_______\ \_______\ \_______\ \_______\
+    \|__|\|__|\|__|     \|_______|\|_______|\|_______|\|_______|
+"#;
+
+fn print_banner(boot_info: &BootInfo) {
+    const PAGE_SIZE: usize = 4096;
+
+    vga_buffer::set_color(Color::Brown, Color::Black);
+    println!("{}", BANNER_ART);
+    println!("apogee x86_64 kernel");
+    vga_buffer::reset_color();
+    println!();
+
+    let heap_kib = allocator::HEAP_SIZE / 1024;
+    let heap_pages = allocator::HEAP_SIZE / PAGE_SIZE;
+    let memory_regions = boot_info.memory_map.iter().count();
+
+    println!("> heap storage: {} KiB ({} pages)", heap_kib, heap_pages);
+    println!(
+        "> heap start: {:#x}  phys offset: {:#x}",
+        allocator::HEAP_START,
+        boot_info.physical_memory_offset
+    );
+    println!("> memory map: {} regions  paging: enabled", memory_regions);
+    println!("> allocator: fixed-size blocks  async executor: ready");
+    println!();
+}
 
 /// Main entry point for the kernel.
 /// Called by the bootloader after it sets up initial memory and boot info.
@@ -40,9 +74,23 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
-    let page_ptr: *mut u64 = page.start_address().as_mut_ptr();
-    unsafe { page_ptr.offset(400).write_volatile(0x_f021_f077_f065_f04e) };
+    print_banner(boot_info);
 
+    sample_heap_allocations();
+
+    #[cfg(test)]
+    test_main();
+
+    // Spin up the cooperative executor with a sample async task and the
+    // asynchronous keyboard handler. `Executor::run` halts the CPU between
+    // wakeups and never returns.
+    let mut executor = Executor::new();
+    executor.spawn(Task::new(example_task()));
+    executor.spawn(Task::new(keyboard::print_keypresses()));
+    executor.run();
+}
+
+fn sample_heap_allocations() {
     // Test heap allocations
     let heap_value = Box::new(41);
     println!("heap_value at {:p}", heap_value);
@@ -64,17 +112,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         "reference count is {} now",
         Rc::strong_count(&cloned_reference)
     );
-
-    #[cfg(test)]
-    test_main();
-
-    // Spin up the cooperative executor with a sample async task and the
-    // asynchronous keyboard handler. `Executor::run` halts the CPU between
-    // wakeups and never returns.
-    let mut executor = Executor::new();
-    executor.spawn(Task::new(example_task()));
-    executor.spawn(Task::new(keyboard::print_keypresses()));
-    executor.run();
 }
 
 /// Trivial async function used to demonstrate the executor end-to-end.

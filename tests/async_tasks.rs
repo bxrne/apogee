@@ -22,9 +22,9 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use apogee::allocator;
+use apogee::task::Task;
 use apogee::task::executor::Executor;
 use apogee::task::simple_executor::SimpleExecutor;
-use apogee::task::Task;
 use bootloader::BootInfo;
 use core::future::Future;
 use core::pin::Pin;

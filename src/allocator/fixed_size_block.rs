@@ -142,9 +142,9 @@ mod tests {
     fn test_some_block_can_hold_list_node() {
         // At least one slab must be able to store a ListNode in place so that
         // freed blocks of that size can be threaded onto the free list.
-        let fits = BLOCK_SIZES.iter().any(|&s| {
-            s >= mem::size_of::<ListNode>() && s >= mem::align_of::<ListNode>()
-        });
+        let fits = BLOCK_SIZES
+            .iter()
+            .any(|&s| s >= mem::size_of::<ListNode>() && s >= mem::align_of::<ListNode>());
         assert!(fits, "no slab is large enough to host a ListNode");
     }
 

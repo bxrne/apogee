@@ -43,6 +43,11 @@ pub enum Color {
     White = 15,
 }
 
+/// Default foreground color for console output.
+pub const DEFAULT_FOREGROUND: Color = Color::LightGray;
+/// Default background color for console output.
+pub const DEFAULT_BACKGROUND: Color = Color::Black;
+
 // ColorCode represents the combined foreground and background color for a character in VGA text
 // mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,12 +72,16 @@ pub struct Writer {
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
-        color_code: ColorCode::new(Color::Yellow, Color::Black),
+        color_code: ColorCode::new(DEFAULT_FOREGROUND, DEFAULT_BACKGROUND),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
 }
 
 impl Writer {
+    pub fn set_color(&mut self, foreground: Color, background: Color) {
+        self.color_code = ColorCode::new(foreground, background);
+    }
+
     // Writes a byte to the current position in the buffer, advancing the cursor.
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
@@ -156,6 +165,18 @@ pub fn _print(args: fmt::Arguments) {
         // avoid deadlock if an interrupt occurs while the buffer is locked
         WRITER.lock().write_fmt(args).unwrap();
     });
+}
+
+pub fn set_color(foreground: Color, background: Color) {
+    use x86_64::instructions::interrupts;
+
+    interrupts::without_interrupts(|| {
+        WRITER.lock().set_color(foreground, background);
+    });
+}
+
+pub fn reset_color() {
+    set_color(DEFAULT_FOREGROUND, DEFAULT_BACKGROUND);
 }
 
 // Tests

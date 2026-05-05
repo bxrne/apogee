@@ -13,6 +13,9 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
+use apogee::task::executor::Executor;
+use apogee::task::keyboard;
+use apogee::task::Task;
 use apogee::{allocator, println};
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
@@ -65,7 +68,25 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     #[cfg(test)]
     test_main();
 
-    apogee::hlt_loop();
+    // Spin up the cooperative executor with a sample async task and the
+    // asynchronous keyboard handler. `Executor::run` halts the CPU between
+    // wakeups and never returns.
+    let mut executor = Executor::new();
+    executor.spawn(Task::new(example_task()));
+    executor.spawn(Task::new(keyboard::print_keypresses()));
+    executor.run();
+}
+
+/// Trivial async function used to demonstrate the executor end-to-end.
+async fn async_number() -> u32 {
+    42
+}
+
+/// Example async task: awaits an async value and prints it. Verifies the
+/// state-machine + executor pipeline works for a non-trivial future.
+async fn example_task() {
+    let number = async_number().await;
+    println!("async number: {}", number);
 }
 
 #[cfg(not(test))]

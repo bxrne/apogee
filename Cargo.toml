@@ -22,6 +22,9 @@ harness = false
 [[test]]
 name = "heap_allocation"
 
+[[test]]
+name = "async_tasks"
+
 [profile.dev]
 panic = "abort"
 
@@ -52,3 +55,17 @@ linked_list_allocator = "0.9.0"
 [dependencies.lazy_static]
 version  = "1.0"
 features = ["spin_no_std"]
+
+[dependencies.crossbeam-queue]
+version = "0.3.11"
+default-features = false
+features = ["alloc"]
+
+[dependencies.conquer-once]
+version = "0.2.0"
+default-features = false
+
+[dependencies.futures-util]
+version = "0.3.4"
+default-features = false
+features = ["alloc"]

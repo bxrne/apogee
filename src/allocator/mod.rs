@@ -11,12 +11,13 @@ use x86_64::{
     },
 };
 
-mod bump;
+pub mod bump;
+pub mod linkedlist;
 
-use bump::BumpAllocator;
+use linkedlist::LinkedListAllocator;
 
 #[global_allocator]
-static ALLOCATOR: Locked<BumpAllocator> = Locked::new(BumpAllocator::empty());
+static ALLOCATOR: Locked<LinkedListAllocator> = Locked::new(LinkedListAllocator::empty());
 
 /// Virtual address where the heap starts.
 /// Chosen to be in a high, unused region of the virtual address space.
@@ -67,18 +68,18 @@ pub fn init_heap(
 }
 
 // A simple wrapper around `spin::Mutex` to provide thread-safe access to the global allocator.
-pub(crate) struct Locked<A> {
+pub struct Locked<A> {
     inner: spin::Mutex<A>,
 }
 
 impl<A> Locked<A> {
-    pub(crate) const fn new(inner: A) -> Self {
+    pub const fn new(inner: A) -> Self {
         Locked {
             inner: spin::Mutex::new(inner),
         }
     }
 
-    pub(crate) fn lock(&self) -> spin::MutexGuard<'_, A> {
+    pub fn lock(&self) -> spin::MutexGuard<'_, A> {
         self.inner.lock()
     }
 }

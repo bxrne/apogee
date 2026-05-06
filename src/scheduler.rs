@@ -27,6 +27,8 @@ pub struct Scheduler {
     tasks_alive: AtomicUsize,
     tasks_spawned: AtomicU64,
     tasks_completed: AtomicU64,
+    processes_alive: AtomicUsize,
+    processes_spawned: AtomicU64,
 }
 
 impl Default for Scheduler {
@@ -44,6 +46,8 @@ impl Scheduler {
             tasks_alive: AtomicUsize::new(0),
             tasks_spawned: AtomicU64::new(0),
             tasks_completed: AtomicU64::new(0),
+            processes_alive: AtomicUsize::new(0),
+            processes_spawned: AtomicU64::new(0),
         }
     }
 
@@ -108,6 +112,24 @@ impl Scheduler {
     pub fn tasks_completed(&self) -> u64 {
         self.tasks_completed.load(Ordering::Relaxed)
     }
+
+    // ---- process observability hooks --------------------------------
+
+    pub fn note_process_spawned(&self) {
+        self.processes_alive.fetch_add(1, Ordering::Relaxed);
+        self.processes_spawned.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn note_process_exited(&self) {
+        self.processes_alive.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    pub fn processes_alive(&self) -> usize {
+        self.processes_alive.load(Ordering::Relaxed)
+    }
+    pub fn processes_spawned(&self) -> u64 {
+        self.processes_spawned.load(Ordering::Relaxed)
+    }
 }
 
 #[cfg(test)]
@@ -145,6 +167,18 @@ mod tests {
         assert_eq!(s.threads_alive(), 1);
         // Cumulative spawn counter must not regress on exit.
         assert_eq!(s.threads_spawned(), 2);
+    }
+
+    #[test_case]
+    fn test_process_spawn_and_exit_balance() {
+        let s = Scheduler::new();
+        s.note_process_spawned();
+        s.note_process_spawned();
+        assert_eq!(s.processes_alive(), 2);
+        assert_eq!(s.processes_spawned(), 2);
+        s.note_process_exited();
+        assert_eq!(s.processes_alive(), 1);
+        assert_eq!(s.processes_spawned(), 2);
     }
 
     #[test_case]

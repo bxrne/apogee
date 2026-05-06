@@ -17,6 +17,7 @@ use apogee::task::Task;
 use apogee::task::executor::CoOpExecuter;
 use apogee::task::keyboard;
 use apogee::thread;
+use apogee::userland;
 use apogee::vga_buffer::{self, Color};
 use apogee::{allocator, println};
 use bootloader::{BootInfo, entry_point};
@@ -93,6 +94,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     threading_demo();
 
+    userland_demo(&mut mapper, &mut frame_allocator);
+
     // Spin up the cooperative executor with a sample async task and the
     // asynchronous keyboard handler. `Executor::run` halts the CPU between
     // wakeups and never returns.
@@ -102,6 +105,39 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     executor.spawn(Task::new(keyboard::print_keypresses()));
     apogee::kinfoln!("startup complete: entering executor loop");
     executor.run();
+}
+
+/// Bring up a single user-mode process from the embedded demo program,
+/// then drive the kernel-thread scheduler until the user process has
+/// called `sys_exit` and its host kernel thread has been reaped. After
+/// this returns, control is back on the bootstrap thread and execution
+/// falls through to the async executor.
+fn userland_demo(
+    mapper: &mut x86_64::structures::paging::OffsetPageTable<'static>,
+    frame_allocator: &mut memory::BootInfoFrameAllocator,
+) {
+    apogee::kinfoln!("userland: bringing up demo ring-3 process");
+    let pid = match userland::create_demo_process(mapper, frame_allocator) {
+        Ok(pid) => pid,
+        Err(e) => {
+            apogee::kerrorln!("userland: failed to create demo process: {}", e);
+            return;
+        }
+    };
+
+    userland::spawn_user_thread(pid);
+
+    // Round-robin between the bootstrap thread and the host kernel
+    // thread until the user process has exited and its host thread is
+    // gone (drained out of the reaper slot).
+    while thread::THREADS.lock().ready_count() > 0 {
+        thread::yield_now();
+    }
+    // One more yield to drain the reaper if the user thread was the
+    // last to exit.
+    thread::yield_now();
+
+    apogee::kinfoln!("userland: demo process complete; resuming bootstrap");
 }
 
 fn sample_heap_allocations() {

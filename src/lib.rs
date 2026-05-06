@@ -27,12 +27,13 @@ pub mod gdt;
 pub mod interrupts;
 pub mod logger;
 pub mod memory;
+pub mod process;
 pub mod scheduler;
 pub mod serial;
 pub mod task;
 pub mod thread;
+pub mod userland;
 pub mod vga_buffer;
-pub mod process;
 
 pub trait Testable {
     fn run(&self);

@@ -2,9 +2,11 @@ use crate::gdt;
 use crate::println;
 use crate::scheduler;
 use crate::task::keyboard::add_scancode;
+use crate::userland;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
+use x86_64::PrivilegeLevel;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 
 // range is 32-47 for hardware interrupts (IRQs)
@@ -26,7 +28,17 @@ lazy_static! {
         }
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
-        idt[SYSCALL_VECTOR as usize].set_handler_fn(syscall_interrupt_handler);
+        // Install the naked syscall ISR. The IDT entry stores only the
+        // function address; we transmute the type so the x86_64 crate
+        // accepts our naked `extern "C"` function. DPL=3 is required
+        // so ring-3 user code can issue `int 0x80`.
+        unsafe {
+            let typed: extern "x86-interrupt" fn(InterruptStackFrame) =
+                core::mem::transmute(userland::syscall_isr as *const ());
+            idt[SYSCALL_VECTOR as usize]
+                .set_handler_fn(typed)
+                .set_privilege_level(PrivilegeLevel::Ring3);
+        }
         idt
     };
 }
@@ -108,12 +120,6 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Keyboard.as_u8());
     }
-}
-
-// Placeholder syscall interrupt handler for `int 0x80`.
-// Software interrupts do not require PIC EOI.
-extern "x86-interrupt" fn syscall_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    crate::kdebugln!("syscall interrupt hit (stub)");
 }
 
 #[test_case]

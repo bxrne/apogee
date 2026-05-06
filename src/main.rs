@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 use apogee::task::Task;
 use apogee::task::executor::CoOpExecuter;
 use apogee::task::keyboard;
+use apogee::thread;
 use apogee::vga_buffer::{self, Color};
 use apogee::{allocator, println};
 use bootloader::{BootInfo, entry_point};
@@ -90,6 +91,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     #[cfg(test)]
     test_main();
 
+    threading_demo();
+
     // Spin up the cooperative executor with a sample async task and the
     // asynchronous keyboard handler. `Executor::run` halts the CPU between
     // wakeups and never returns.
@@ -124,6 +127,45 @@ fn sample_heap_allocations() {
         "rc strong_count={} after drop",
         Rc::strong_count(&cloned_reference)
     );
+}
+
+/// Spin up two preemptible-style kernel threads that exercise the
+/// real context-switch path: they each print, call [`thread::yield_now`]
+/// to round-robin with the bootstrap thread and each other, and finally
+/// call [`thread::exit_thread`] to tear themselves down. Once both have
+/// exited, the bootstrap thread (this function's caller) regains the CPU
+/// and execution falls through to the async executor.
+fn threading_demo() {
+    apogee::kinfoln!("threads: spawning two kernel threads");
+    {
+        let mut sched = thread::THREADS.lock();
+        sched.spawn(worker_a);
+        sched.spawn(worker_b);
+    }
+
+    // Drive the scheduler from the bootstrap thread until every spawned
+    // thread has called `exit_thread` and the ready queue is empty again.
+    while thread::THREADS.lock().ready_count() > 0 {
+        thread::yield_now();
+    }
+
+    apogee::kinfoln!("threads: all kernel threads exited; resuming bootstrap");
+}
+
+extern "C" fn worker_a() -> ! {
+    let id = thread::THREADS.lock().current().as_u64();
+    apogee::kinfoln!("thread {}: A running, about to yield", id);
+    thread::yield_now();
+    apogee::kinfoln!("thread {}: A resumed, exiting", id);
+    thread::exit_thread();
+}
+
+extern "C" fn worker_b() -> ! {
+    let id = thread::THREADS.lock().current().as_u64();
+    apogee::kinfoln!("thread {}: B running, about to yield", id);
+    thread::yield_now();
+    apogee::kinfoln!("thread {}: B resumed, exiting", id);
+    thread::exit_thread();
 }
 
 /// Trivial async function used to demonstrate the executor end-to-end.

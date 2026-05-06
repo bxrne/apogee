@@ -12,12 +12,19 @@
 //! the CPU. The bootstrap kernel control flow (i.e. whoever first calls
 //! into the scheduler) participates as an implicit "thread 0" so that
 //! yields round-robin between it and any spawned threads.
+//!
+//! Each thread is tagged with a [`ProcessId`]; today every thread belongs
+//! to [`ProcessId::KERNEL`], but the field is in place for the future
+//! userland process work.
 
 use crate::allocator::Locked;
+use crate::process::ProcessId;
+use crate::scheduler::SCHEDULER;
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, VecDeque};
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicU64, Ordering};
+use x86_64::instructions::interrupts;
 
 /// Per-thread stack size. 16 KiB is plenty for the trivial demo workloads
 /// driven by this module and keeps heap pressure low on a small kernel
@@ -66,6 +73,7 @@ pub enum ThreadState {
 /// register state.
 pub struct KernelThread {
     id: ThreadId,
+    process: ProcessId,
     state: ThreadState,
     context: Context,
     /// Backing storage for the thread stack. Held in a `Box` so that the
@@ -80,6 +88,13 @@ impl KernelThread {
     /// not insert a function epilogue: when the thread "completes" it must
     /// call [`exit_thread`] instead of returning.
     pub fn new(entry: extern "C" fn() -> !) -> Self {
+        Self::new_in_process(entry, ProcessId::KERNEL)
+    }
+
+    /// Build a new kernel thread that will start by jumping to `entry`,
+    /// tagged as belonging to `process`. Today only `ProcessId::KERNEL`
+    /// is meaningful.
+    pub fn new_in_process(entry: extern "C" fn() -> !, process: ProcessId) -> Self {
         let mut stack: Box<[u8; STACK_SIZE]> = Box::new([0; STACK_SIZE]);
         // Stacks grow downward; start at the high end of the buffer.
         let stack_top = unsafe { stack.as_mut_ptr().add(STACK_SIZE) } as u64;
@@ -102,6 +117,7 @@ impl KernelThread {
 
         KernelThread {
             id: ThreadId::new(),
+            process,
             state: ThreadState::Ready,
             context: Context { rsp: sp },
             _stack: stack,
@@ -110,6 +126,10 @@ impl KernelThread {
 
     pub fn id(&self) -> ThreadId {
         self.id
+    }
+
+    pub fn process(&self) -> ProcessId {
+        self.process
     }
 
     pub fn state(&self) -> ThreadState {
@@ -158,6 +178,12 @@ pub struct ThreadScheduler {
     /// which has no associated [`KernelThread`] entry because it uses the
     /// kernel's startup stack.
     bootstrap_context: Context,
+    /// Holding pen for a thread that called [`exit_thread`]. The exiting
+    /// thread cannot drop its own [`KernelThread`] (and therefore its
+    /// stack) while still running on it; instead it parks the box here
+    /// and the *next* scheduler operation drops it from a different
+    /// stack. See [`drain_reaper`].
+    reaper: Option<Box<KernelThread>>,
 }
 
 impl ThreadScheduler {
@@ -167,16 +193,27 @@ impl ThreadScheduler {
             ready: VecDeque::new(),
             current: BOOTSTRAP_ID,
             bootstrap_context: Context { rsp: 0 },
+            reaper: None,
         }
     }
 
     /// Spawn a new kernel thread that will start by jumping to `entry`.
     /// Returns the new thread's id.
     pub fn spawn(&mut self, entry: extern "C" fn() -> !) -> ThreadId {
-        let thread = Box::new(KernelThread::new(entry));
+        self.spawn_in_process(entry, ProcessId::KERNEL)
+    }
+
+    /// Spawn a new kernel thread tagged as belonging to `process`.
+    pub fn spawn_in_process(
+        &mut self,
+        entry: extern "C" fn() -> !,
+        process: ProcessId,
+    ) -> ThreadId {
+        let thread = Box::new(KernelThread::new_in_process(entry, process));
         let id = thread.id();
         self.threads.insert(id, thread);
         self.ready.push_back(id);
+        SCHEDULER.note_thread_spawned();
         id
     }
 
@@ -193,6 +230,19 @@ impl ThreadScheduler {
     }
 }
 
+/// Drop any thread that called [`exit_thread`] before us. Safe to call
+/// from any thread *other* than the one being reaped, which is the
+/// invariant established by exit_thread + the round-robin queue.
+fn drain_reaper() {
+    // Take the box out under the lock with IRQs disabled, then drop it
+    // outside the lock so the allocator runs without holding it.
+    let to_drop = interrupts::without_interrupts(|| THREADS.lock().reaper.take());
+    if to_drop.is_some() {
+        SCHEDULER.note_thread_exited();
+    }
+    drop(to_drop);
+}
+
 /// Voluntarily yield the CPU to the next ready thread.
 ///
 /// If no other threads are ready, returns immediately without switching.
@@ -200,17 +250,21 @@ impl ThreadScheduler {
 /// re-queued at the back of the ready list and the next ready thread is
 /// switched in.
 pub fn yield_now() {
+    // First, reclaim any thread that exited before we were scheduled.
+    // We are not standing on its stack, so dropping the box is safe.
+    drain_reaper();
+
     // Decide who we're switching to/from while holding the scheduler
     // lock, then drop the lock and snap raw context pointers across the
     // switch. The lock must be released before `switch_context` because
     // the incoming thread will need to re-acquire it.
-    let (prev_ctx, next_ctx) = {
+    //
+    // IRQs are disabled across the lock acquisition to prevent any
+    // future IRQ that touches `THREADS` from deadlocking against us.
+    let result = interrupts::without_interrupts(|| {
         let mut sched = THREADS.lock();
 
-        let next_id = match sched.ready.pop_front() {
-            Some(id) => id,
-            None => return,
-        };
+        let next_id = sched.ready.pop_front()?;
         let prev_id = sched.current;
         sched.current = next_id;
 
@@ -239,34 +293,53 @@ pub fn yield_now() {
             &t.context as *const Context
         };
 
-        (prev_ctx_ptr, next_ctx_ptr)
+        Some((prev_ctx_ptr, next_ctx_ptr))
+    });
+
+    let (prev_ctx, next_ctx) = match result {
+        Some(p) => p,
+        // Nothing else to run — keep going on the current thread.
+        None => return,
     };
 
     // SAFETY: both pointers refer to `Context` values owned by the global
     // scheduler. Boxed `KernelThread`s have stable addresses for as long
     // as they remain in `threads`, and `bootstrap_context` is a static
     // field of the same `ThreadScheduler`. The lock has been released so
-    // the incoming thread can re-acquire it.
+    // the incoming thread can re-acquire it. IRQs are in their normal
+    // (enabled) state so the new thread runs preemptibly.
     unsafe { switch_context(prev_ctx, next_ctx) };
 }
 
-/// Mark the current thread as finished, drop its resources, and switch
-/// to the next ready thread. Never returns.
+/// Mark the current thread as finished, park its `Box<KernelThread>`
+/// in the scheduler's reaper slot for the next thread to drop, and
+/// switch to the next ready thread. Never returns.
 ///
 /// A thread function (`extern "C" fn() -> !`) must call this when its
 /// work is done — returning would jump to a garbage address since the
 /// thread's initial stack frame has no return slot beyond `entry`.
 pub fn exit_thread() -> ! {
-    // Pick the next thread to run while holding the lock; remove the
-    // current thread from the map *before* releasing the lock so its
-    // backing stack stays alive only until the scratch save below
-    // completes (we never resume from `scratch`).
-    let next_ctx = {
+    // Drop any *previously* reaped thread before we add ourselves to
+    // the slot — only one thread can sit there at a time.
+    drain_reaper();
+
+    let next_ctx = interrupts::without_interrupts(|| {
         let mut sched = THREADS.lock();
 
         let prev_id = sched.current;
         if prev_id != BOOTSTRAP_ID {
-            sched.threads.remove(&prev_id);
+            // Move our box into the reaper slot rather than dropping
+            // it now: we are still running on the stack it owns. The
+            // next scheduler operation (on a different stack) will
+            // drop it.
+            if let Some(mut boxed) = sched.threads.remove(&prev_id) {
+                boxed.state = ThreadState::Finished;
+                debug_assert!(
+                    sched.reaper.is_none(),
+                    "reaper slot should have been drained"
+                );
+                sched.reaper = Some(boxed);
+            }
         }
 
         let next_id = sched
@@ -285,10 +358,12 @@ pub fn exit_thread() -> ! {
             t.state = ThreadState::Running;
             &t.context as *const Context
         }
-    };
+    });
 
     // Throwaway save slot: we never resume from here, so the saved rsp
-    // it ends up holding is discarded immediately.
+    // it ends up holding is discarded immediately. The `Box` we stashed
+    // in the reaper still owns this stack, keeping it valid until the
+    // switch completes.
     let mut scratch = Context::default();
     unsafe { switch_context(&mut scratch as *mut Context, next_ctx) };
     // `switch_context` does not return for an exiting thread because
@@ -319,6 +394,7 @@ mod tests {
         }
         let thread = KernelThread::new(dummy);
         assert_eq!(thread.state(), ThreadState::Ready);
+        assert_eq!(thread.process(), ProcessId::KERNEL);
         // Saved rsp must lie within the owned stack buffer and be
         // 16-byte aligned + 8 (six register slots below the alignment).
         let sp = thread.context.rsp as usize;
@@ -366,10 +442,13 @@ mod tests {
         // Second yield: bootstrap -> ping_thread (runs second half, exits).
         yield_now();
         assert_eq!(SWITCH_HITS.load(Ordering::SeqCst), 2);
-        // ping_thread is gone; nothing else is queued.
+        // ping_thread is parked in the reaper slot until the next
+        // scheduler op drains it; yield once more to do so.
+        yield_now();
         let sched = THREADS.lock();
         assert_eq!(sched.thread_count(), 0);
         assert_eq!(sched.ready_count(), 0);
+        assert!(sched.reaper.is_none());
         assert_eq!(sched.current(), BOOTSTRAP_ID);
     }
 }

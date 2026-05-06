@@ -67,6 +67,7 @@ impl CoOpExecuter {
             panic!("task with same ID already in tasks");
         }
         self.task_queue.push(task_id).expect("queue full");
+        crate::scheduler::SCHEDULER.note_task_spawned();
         crate::kdebugln!(
             "executor: queued task {} (tasks={})",
             task_id.as_u64(),
@@ -121,6 +122,7 @@ impl CoOpExecuter {
                     tasks.remove(&task_id);
                     waker_cache.remove(&task_id);
                     started_tasks.remove(&task_id);
+                    crate::scheduler::SCHEDULER.note_task_completed();
                     crate::kdebugln!(
                         "task {} completed (remaining tasks: {})",
                         task_id.as_u64(),

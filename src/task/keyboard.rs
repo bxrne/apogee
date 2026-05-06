@@ -24,7 +24,7 @@ use futures_util::stream::StreamExt;
 use futures_util::task::AtomicWaker;
 use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
 
-use crate::{print, println};
+use crate::{kwarnln, print};
 
 /// Bounded queue of raw scancodes shared between the interrupt handler and
 /// the async keyboard task. Initialised lazily by [`ScancodeStream::new`].
@@ -45,16 +45,20 @@ static WAKER: AtomicWaker = AtomicWaker::new();
 /// handler. If the queue is uninitialised or full, the scancode is dropped
 /// and a warning is printed.
 pub(crate) fn add_scancode(scancode: u8) {
+    // CAUTION: this runs in interrupt context. It must never take a
+    // blocking lock (no `println!` on the VGA writer, etc.) — the
+    // logger macros use `try_lock` and silently drop on contention,
+    // which is the right behaviour here.
     if let Ok(queue) = SCANCODE_QUEUE.try_get() {
         if queue.push(scancode).is_err() {
-            println!("WARNING: scancode queue full; dropping keyboard input");
+            kwarnln!("scancode queue full; dropping keyboard input");
         } else {
             // Wake the consuming task *after* a successful push so it sees
             // the new byte on its next poll.
             WAKER.wake();
         }
     } else {
-        println!("WARNING: scancode queue uninitialized");
+        kwarnln!("scancode queue uninitialized");
     }
 }
 

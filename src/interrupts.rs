@@ -83,8 +83,9 @@ extern "x86-interrupt" fn double_fault_handler(
 // The timer interrupt handler is called by the hardware timer at regular intervals (e.g., every
 // 10ms).
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    // Keep IRQ work minimal: only tick scheduler state here.
-    scheduler::SCHEDULER.lock().tick();
+    // Lock-free tick — safe from interrupt context, no deadlock window
+    // against any non-IRQ caller.
+    scheduler::SCHEDULER.tick();
 
     unsafe {
         PICS.lock()

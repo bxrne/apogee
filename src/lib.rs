@@ -30,6 +30,7 @@ pub mod memory;
 pub mod scheduler;
 pub mod serial;
 pub mod task;
+pub mod thread;
 pub mod vga_buffer;
 
 pub trait Testable {

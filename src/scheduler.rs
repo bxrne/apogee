@@ -76,6 +76,7 @@ impl Scheduler {
     pub fn ticks(&self) -> u64 {
         self.tick_count.load(Ordering::Relaxed)
     }
+
 }
 
 #[cfg(test)]

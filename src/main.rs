@@ -228,4 +228,3 @@ fn panic(info: &PanicInfo) -> ! {
 fn panic(info: &PanicInfo) -> ! {
     apogee::test_panic_handler(info)
 }
-

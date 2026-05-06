@@ -82,10 +82,7 @@ fn test_executor_spawn_updates_global_scheduler_counts() {
         apogee::scheduler::SCHEDULER.tasks_spawned(),
         before_spawned + 2
     );
-    assert_eq!(
-        apogee::scheduler::SCHEDULER.tasks_alive(),
-        before_alive + 2
-    );
+    assert_eq!(apogee::scheduler::SCHEDULER.tasks_alive(), before_alive + 2);
 
     exec.run_ready_tasks_for_test();
     assert_eq!(apogee::scheduler::SCHEDULER.tasks_alive(), before_alive);

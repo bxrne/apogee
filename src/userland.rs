@@ -144,10 +144,7 @@ where
             .flush();
     }
 
-    let process = Process::new(
-        VirtAddr::new(USER_CODE_BASE),
-        VirtAddr::new(USER_STACK_TOP),
-    );
+    let process = Process::new(VirtAddr::new(USER_CODE_BASE), VirtAddr::new(USER_STACK_TOP));
     let pid = process::register(process);
     crate::kinfoln!(
         "userland: created process {} entry={:#x} stack_top={:#x}",

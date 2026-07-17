@@ -19,7 +19,7 @@ use apogee::task::keyboard;
 use apogee::thread;
 use apogee::userland;
 use apogee::vga_buffer::{self, Color};
-use apogee::{allocator, println};
+use apogee::{allocator, kdebugln, kerrorln, kinfoln, println};
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, structures::paging::Page};
@@ -64,22 +64,23 @@ fn print_banner(boot_info: &BootInfo) {
 /// Main entry point for the kernel.
 /// Called by the bootloader after it sets up initial memory and boot info.
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    apogee::kinfoln!("boot: entered kernel_main");
+    kinfoln!("BOOT", "entered kernel_main");
     apogee::init();
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
-    apogee::kdebugln!("memory: offset page table initialized");
+    kdebugln!("MEM ", "offset page table initialized");
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
-    apogee::kdebugln!("memory: boot frame allocator initialized");
+    kdebugln!("MEM ", "boot frame allocator initialized");
 
     let page = Page::containing_address(VirtAddr::new(0));
     memory::create_example_mapping(page, &mut mapper, &mut frame_allocator);
-    apogee::kdebugln!("memory: example mapping established");
+    kdebugln!("MEM ", "example mapping established");
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
-    apogee::kinfoln!(
+    kinfoln!(
+        "MEM ",
         "heap initialized: {} KiB @ {:#x}",
         allocator::HEAP_SIZE / 1024,
         allocator::HEAP_START
@@ -100,10 +101,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // asynchronous keyboard handler. `Executor::run` halts the CPU between
     // wakeups and never returns.
     let mut executor = CoOpExecuter::new();
-    apogee::kinfoln!("executor: spawning startup tasks");
+    kinfoln!("EXEC", "spawning startup tasks");
     executor.spawn(Task::new(example_task()));
     executor.spawn(Task::new(keyboard::print_keypresses()));
-    apogee::kinfoln!("startup complete: entering executor loop");
+    kinfoln!("BOOT", "startup complete: entering executor loop");
     executor.run();
 }
 
@@ -116,11 +117,11 @@ fn userland_demo(
     mapper: &mut x86_64::structures::paging::OffsetPageTable<'static>,
     frame_allocator: &mut memory::BootInfoFrameAllocator,
 ) {
-    apogee::kinfoln!("userland: bringing up demo ring-3 process");
+    kinfoln!("USER", "bringing up demo ring-3 process");
     let pid = match userland::create_demo_process(mapper, frame_allocator) {
         Ok(pid) => pid,
         Err(e) => {
-            apogee::kerrorln!("userland: failed to create demo process: {}", e);
+            kerrorln!("USER", "failed to create demo process: {}", e);
             return;
         }
     };
@@ -137,29 +138,31 @@ fn userland_demo(
     // last to exit.
     thread::yield_now();
 
-    apogee::kinfoln!("userland: demo process complete; resuming bootstrap");
+    kinfoln!("USER", "demo process complete; resuming bootstrap");
 }
 
 fn sample_heap_allocations() {
-    apogee::kdebugln!("heap smoke test: allocating Box, Vec, and Rc");
+    kdebugln!("HEAP", "smoke test: allocating Box, Vec, and Rc");
 
     let heap_value = Box::new(41);
-    apogee::kdebugln!("heap_value at {:p}", heap_value);
+    kdebugln!("HEAP", "heap_value at {:p}", heap_value);
 
     let mut vec = Vec::new();
     for i in 0..500 {
         vec.push(i);
     }
-    apogee::kdebugln!("vec backing slice at {:p}", vec.as_slice());
+    kdebugln!("HEAP", "vec backing slice at {:p}", vec.as_slice());
 
     let reference_counted = Rc::new([1, 2, 3]);
     let cloned_reference = reference_counted.clone();
-    apogee::kdebugln!(
+    kdebugln!(
+        "HEAP",
         "rc strong_count={} before drop",
         Rc::strong_count(&cloned_reference)
     );
     core::mem::drop(reference_counted);
-    apogee::kdebugln!(
+    kdebugln!(
+        "HEAP",
         "rc strong_count={} after drop",
         Rc::strong_count(&cloned_reference)
     );
@@ -172,7 +175,7 @@ fn sample_heap_allocations() {
 /// exited, the bootstrap thread (this function's caller) regains the CPU
 /// and execution falls through to the async executor.
 fn threading_demo() {
-    apogee::kinfoln!("threads: spawning two kernel threads");
+    kinfoln!("THRD", "spawning two kernel threads");
     {
         let mut sched = thread::THREADS.lock();
         sched.spawn(worker_a);
@@ -185,22 +188,22 @@ fn threading_demo() {
         thread::yield_now();
     }
 
-    apogee::kinfoln!("threads: all kernel threads exited; resuming bootstrap");
+    kinfoln!("THRD", "all kernel threads exited; resuming bootstrap");
 }
 
 extern "C" fn worker_a() -> ! {
     let id = thread::THREADS.lock().current().as_u64();
-    apogee::kinfoln!("thread {}: A running, about to yield", id);
+    kinfoln!("THRD", "thread {}: A running, about to yield", id);
     thread::yield_now();
-    apogee::kinfoln!("thread {}: A resumed, exiting", id);
+    kinfoln!("THRD", "thread {}: A resumed, exiting", id);
     thread::exit_thread();
 }
 
 extern "C" fn worker_b() -> ! {
     let id = thread::THREADS.lock().current().as_u64();
-    apogee::kinfoln!("thread {}: B running, about to yield", id);
+    kinfoln!("THRD", "thread {}: B running, about to yield", id);
     thread::yield_now();
-    apogee::kinfoln!("thread {}: B resumed, exiting", id);
+    kinfoln!("THRD", "thread {}: B resumed, exiting", id);
     thread::exit_thread();
 }
 
@@ -213,7 +216,7 @@ async fn async_number() -> u32 {
 /// state-machine + executor pipeline works for a non-trivial future.
 async fn example_task() {
     let number = async_number().await;
-    apogee::kdebugln!("example async task completed with {}", number);
+    kdebugln!("EXEC", "example async task completed with {}", number);
 }
 
 #[cfg(not(test))]

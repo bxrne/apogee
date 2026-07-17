@@ -16,6 +16,8 @@ use crossbeam_queue::ArrayQueue;
 
 use super::{Task, TaskId};
 
+use crate::{kdebugln, kinfoln};
+
 /// Capacity of the ready-task queue. Must comfortably exceed the highest
 /// expected number of concurrently-runnable tasks; pushes from interrupt
 /// handlers panic if the queue is full.
@@ -68,8 +70,9 @@ impl CoOpExecuter {
         }
         self.task_queue.push(task_id).expect("queue full");
         crate::scheduler::SCHEDULER.note_task_spawned();
-        crate::kdebugln!(
-            "executor: queued task {} (tasks={})",
+        kdebugln!(
+            "EXEC",
+            "queued task {} (tasks={})",
             task_id.as_u64(),
             self.tasks.len()
         );
@@ -109,7 +112,8 @@ impl CoOpExecuter {
                 .or_insert_with(|| TaskWaker::new(task_id, task_queue.clone()));
 
             if started_tasks.insert(task_id) {
-                crate::kinfoln!(
+                kinfoln!(
+                    "EXEC",
                     "task {} started (total tasks: {})",
                     task_id.as_u64(),
                     total_tasks
@@ -123,7 +127,8 @@ impl CoOpExecuter {
                     waker_cache.remove(&task_id);
                     started_tasks.remove(&task_id);
                     crate::scheduler::SCHEDULER.note_task_completed();
-                    crate::kdebugln!(
+                    kdebugln!(
+                        "EXEC",
                         "task {} completed (remaining tasks: {})",
                         task_id.as_u64(),
                         tasks.len()
@@ -140,7 +145,7 @@ impl CoOpExecuter {
     /// Returns `!` because, in our kernel, the keyboard task is intended to
     /// run for the lifetime of the system.
     pub fn run(&mut self) -> ! {
-        crate::kinfoln!("executor: run loop started");
+        kinfoln!("EXEC", "run loop started");
         loop {
             self.run_ready_tasks();
             self.sleep_if_idle();

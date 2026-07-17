@@ -14,6 +14,8 @@
 
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
+use crate::kdebugln;
+
 /// Global scheduler instance.
 pub static SCHEDULER: Scheduler = Scheduler::new();
 
@@ -56,8 +58,9 @@ impl Scheduler {
     pub fn tick(&self) {
         let ticks = self.tick_count.fetch_add(1, Ordering::Relaxed) + 1;
         if ticks % TICK_LOG_INTERVAL == 0 {
-            crate::kdebugln!(
-                "scheduler tick {} (threads={} tasks={})",
+            kdebugln!(
+                "SCHD",
+                "tick {} (threads={} tasks={})",
                 ticks,
                 self.threads_alive.load(Ordering::Relaxed),
                 self.tasks_alive.load(Ordering::Relaxed),

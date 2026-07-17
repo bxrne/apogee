@@ -11,6 +11,7 @@ extern crate alloc;
 
 use apogee::allocator;
 use apogee::task::Task;
+use apogee::{kdebugln, kerrorln, kinfoln, ktraceln, kwarnln};
 use apogee::task::executor::CoOpExecuter;
 use bootloader::BootInfo;
 use core::panic::PanicInfo;
@@ -40,11 +41,11 @@ fn panic(info: &PanicInfo) -> ! {
 fn test_logger_macros_are_callable() {
     let before = apogee::logger::dropped_messages();
 
-    apogee::ktraceln!("trace boot visibility test");
-    apogee::kdebugln!("debug boot visibility test");
-    apogee::kinfoln!("info boot visibility test");
-    apogee::kwarnln!("warn boot visibility test");
-    apogee::kerrorln!("error boot visibility test");
+    ktraceln!("TEST", "trace boot visibility test");
+    kdebugln!("TEST", "debug boot visibility test");
+    kinfoln!("TEST", "info boot visibility test");
+    kwarnln!("TEST", "warn boot visibility test");
+    kerrorln!("TEST", "error boot visibility test");
 
     let after = apogee::logger::dropped_messages();
     assert!(after >= before);

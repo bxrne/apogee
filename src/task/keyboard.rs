@@ -51,14 +51,14 @@ pub(crate) fn add_scancode(scancode: u8) {
     // which is the right behaviour here.
     if let Ok(queue) = SCANCODE_QUEUE.try_get() {
         if queue.push(scancode).is_err() {
-            kwarnln!("scancode queue full; dropping keyboard input");
+            kwarnln!("KBD ", "scancode queue full; dropping keyboard input");
         } else {
             // Wake the consuming task *after* a successful push so it sees
             // the new byte on its next poll.
             WAKER.wake();
         }
     } else {
-        kwarnln!("scancode queue uninitialized");
+        kwarnln!("KBD ", "scancode queue uninitialized");
     }
 }
 
@@ -140,8 +140,8 @@ pub async fn print_keypresses() {
             && let Some(key) = keyboard.process_keyevent(key_event)
         {
             match key {
-                DecodedKey::Unicode(character) => kdebugln!("keyboard: {}", character),
-                DecodedKey::RawKey(key) => kdebugln!("keyboard: {:?}", key),
+                DecodedKey::Unicode(character) => kdebugln!("KBD ", "{}", character),
+                DecodedKey::RawKey(key) => kdebugln!("KBD ", "{:?}", key),
             }
         }
     }

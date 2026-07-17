@@ -1,4 +1,5 @@
 use crate::gdt;
+use crate::kdebugln;
 use crate::println;
 use crate::scheduler;
 use crate::task::keyboard::add_scancode;
@@ -62,8 +63,9 @@ impl InterruptIndex {
 
 pub fn init_idt() {
     IDT.load();
-    crate::kdebugln!(
-        "idt ready: timer={} keyboard={} syscall={:#x}",
+    kdebugln!(
+        "IDT ",
+        "ready: timer={} keyboard={} syscall={:#x}",
         InterruptIndex::Timer.as_u8(),
         InterruptIndex::Keyboard.as_u8(),
         SYSCALL_VECTOR

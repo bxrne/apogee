@@ -17,7 +17,7 @@
 #![feature(abi_x86_interrupt)]
 use core::panic::PanicInfo;
 
-extern crate alloc;
+extern crate alloc; // using alloc crate from the standard library for heap allocation
 
 #[cfg(test)]
 use bootloader::{BootInfo, entry_point};
@@ -52,17 +52,13 @@ where
 
 pub fn test_runner(tests: &[&dyn Testable]) {
     serial_println!("");
-    serial_println!("==============================================");
     serial_println!("  Running {} tests", tests.len());
-    serial_println!("==============================================");
     serial_println!("");
     for test in tests {
         test.run();
     }
     serial_println!("");
-    serial_println!("----------------------------------------------");
     serial_println!("  All tests passed!");
-    serial_println!("----------------------------------------------");
     serial_println!("");
     exit_qemu(QemuExitCode::Success);
 }
@@ -123,19 +119,19 @@ pub fn hlt_loop() -> ! {
 
 pub fn init() {
     #[cfg(not(test))]
-    crate::kinfoln!("init: loading GDT");
+    kinfoln!("INIT", "loading GDT");
     gdt::init();
 
     #[cfg(not(test))]
-    crate::kinfoln!("init: loading IDT");
+    kinfoln!("INIT", "loading IDT");
     interrupts::init_idt();
 
     #[cfg(not(test))]
-    crate::kinfoln!("init: initializing PIC");
+    kinfoln!("INIT", "initializing PIC");
     unsafe { interrupts::PICS.lock().initialize() };
 
     #[cfg(not(test))]
-    crate::kinfoln!("init: enabling interrupts");
+    kinfoln!("INIT", "enabling interrupts");
     x86_64::instructions::interrupts::enable();
 }
 

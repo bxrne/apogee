@@ -32,6 +32,8 @@ use x86_64::structures::paging::{
 };
 
 use crate::gdt;
+use crate::kinfoln;
+use crate::kwarnln;
 use crate::process::{self, Process, ProcessId};
 use crate::thread;
 
@@ -146,8 +148,9 @@ where
 
     let process = Process::new(VirtAddr::new(USER_CODE_BASE), VirtAddr::new(USER_STACK_TOP));
     let pid = process::register(process);
-    crate::kinfoln!(
-        "userland: created process {} entry={:#x} stack_top={:#x}",
+    kinfoln!(
+        "USER",
+        "created process {} entry={:#x} stack_top={:#x}",
         pid.as_u64(),
         USER_CODE_BASE,
         USER_STACK_TOP
@@ -174,8 +177,9 @@ extern "C" fn user_thread_entry() -> ! {
     let raw = PENDING_PID.swap(0, core::sync::atomic::Ordering::SeqCst);
     let pid = ProcessId::from_raw(raw);
     let snap = process::snapshot(pid).expect("user_thread_entry: pid missing from registry");
-    crate::kinfoln!(
-        "userland: thread {} entering ring 3 for pid {} @ rip={:#x}",
+    kinfoln!(
+        "USER",
+        "thread {} entering ring 3 for pid {} @ rip={:#x}",
         thread::THREADS.lock().current().as_u64(),
         pid.as_u64(),
         snap.user_entry.as_u64()
@@ -304,7 +308,7 @@ extern "C" fn syscall_dispatch(frame: *mut SyscallFrame) {
         SYS_EXIT => sys_exit(frame.rdi as i32),
         SYS_PRINT => sys_print(frame, frame.rdi, frame.rsi),
         n => {
-            crate::kwarnln!("unknown syscall {} from ring 3", n);
+            kwarnln!("SYCL", "unknown syscall {} from ring 3", n);
             frame.rax = u64::MAX;
         }
     }
@@ -318,7 +322,7 @@ extern "C" fn syscall_dispatch(frame: *mut SyscallFrame) {
 /// next on the kernel-thread ready queue (the bootstrap thread, in
 /// the demo).
 fn sys_exit(code: i32) -> ! {
-    crate::kinfoln!("userland: sys_exit({})", code);
+    kinfoln!("USER", "sys_exit({})", code);
     // Today there is at most one user process at a time; pick the
     // first one out of the registry.
     let pid_opt = process::PROCESSES.lock().keys().next().copied();
@@ -336,17 +340,16 @@ fn sys_exit(code: i32) -> ! {
 /// panic.
 fn sys_print(frame: &mut SyscallFrame, ptr: u64, len: u64) {
     if len > SYS_PRINT_MAX {
-        crate::kwarnln!("sys_print: refusing oversized len {}", len);
+        kwarnln!("SYCL", "sys_print: refusing oversized len {}", len);
         frame.rax = u64::MAX;
         return;
     }
     // SAFETY: ptr+len lives in the user's address space, which is
     // mapped into ours; the bound check above keeps len modest.
     let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len as usize) };
-    // Forward to the dual-target (VGA + serial) logger so the output
-    // is visible regardless of where the kernel's stdout is wired up.
+    // Forward to the VGA writer so user output appears on screen.
     for &b in bytes {
-        crate::klog!("{}", b as char);
+        crate::print!("{}", b as char);
     }
     frame.rax = len;
 }

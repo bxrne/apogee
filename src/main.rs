@@ -13,6 +13,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
+use apogee::memory;
 use apogee::task::Task;
 use apogee::task::executor::CoOpExecuter;
 use apogee::task::keyboard;
@@ -23,8 +24,6 @@ use apogee::{allocator, kdebugln, kerrorln, kinfoln, println};
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use x86_64::{VirtAddr, structures::paging::Page};
-
-mod memory;
 
 entry_point!(kernel_main);
 pub const BANNER_ART: &str = r#"

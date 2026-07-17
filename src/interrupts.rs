@@ -8,8 +8,9 @@ use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
 use x86_64::PrivilegeLevel;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
+use x86_64::registers::control::Cr2;
 // range is 32-47 for hardware interrupts (IRQs)
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -29,6 +30,7 @@ lazy_static! {
         }
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
+        idt.page_fault.set_handler_fn(page_fault_handler);
         // Install the naked syscall ISR. The IDT entry stores only the
         // function address; we transmute the type so the x86_64 crate
         // accepts our naked `extern "C"` function. DPL=3 is required
@@ -73,6 +75,21 @@ pub fn init_idt() {
 }
 
 // Handlers for CPU exceptions and hardware interrupts
+
+// The page fault handler is called when a page fault occurs, which happens when the CPU tries to
+// access a page that is not present in memory or that the CPU does not have permission to access.
+// The handler prints the error code and the address that caused the fault, and then panics.
+extern "x86-interrupt" fn page_fault_handler(
+    stack_frame: InterruptStackFrame,
+    error_code: PageFaultErrorCode,
+) {
+    let faulting_address = Cr2::read();
+    println!(
+        "EXCEPTION: PAGE FAULT\nAccessed Address: {:?}\nError Code: {:?}\n{:#?}",
+        faulting_address, error_code, stack_frame
+    );
+    panic!("Page fault");
+}
 
 // The breakpoint handler is used for testing and debugging. It will be triggered by the `int3`
 // instruction.

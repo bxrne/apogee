@@ -24,7 +24,7 @@ use futures_util::stream::StreamExt;
 use futures_util::task::AtomicWaker;
 use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
 
-use crate::{kwarnln, print};
+use crate::{kdebugln, kwarnln};
 
 /// Bounded queue of raw scancodes shared between the interrupt handler and
 /// the async keyboard task. Initialised lazily by [`ScancodeStream::new`].
@@ -140,8 +140,8 @@ pub async fn print_keypresses() {
             && let Some(key) = keyboard.process_keyevent(key_event)
         {
             match key {
-                DecodedKey::Unicode(character) => print!("{}", character),
-                DecodedKey::RawKey(key) => print!("{:?}", key),
+                DecodedKey::Unicode(character) => kdebugln!("keyboard: {}", character),
+                DecodedKey::RawKey(key) => kdebugln!("keyboard: {:?}", key),
             }
         }
     }

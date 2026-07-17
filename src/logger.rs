@@ -111,7 +111,7 @@ pub fn dropped_messages() -> u64 {
 #[macro_export]
 macro_rules! klog {
     ($($arg:tt)*) => {
-        $crate::logger::_print(format_args!($($arg)*));
+        $crate::logger::_print(format_args!($($arg)*))
     };
 }
 
@@ -124,7 +124,7 @@ macro_rules! klogln {
 #[macro_export]
 macro_rules! ktrace {
     ($($arg:tt)*) => {
-        $crate::logger::_log($crate::logger::LogLevel::Trace, format_args!($($arg)*));
+        $crate::logger::_log($crate::logger::LogLevel::Trace, format_args!($($arg)*))
     };
 }
 
@@ -137,7 +137,7 @@ macro_rules! ktraceln {
 #[macro_export]
 macro_rules! kdebug {
     ($($arg:tt)*) => {
-        $crate::logger::_log($crate::logger::LogLevel::Debug, format_args!($($arg)*));
+        $crate::logger::_log($crate::logger::LogLevel::Debug, format_args!($($arg)*))
     };
 }
 
@@ -150,7 +150,7 @@ macro_rules! kdebugln {
 #[macro_export]
 macro_rules! kinfo {
     ($($arg:tt)*) => {
-        $crate::logger::_log($crate::logger::LogLevel::Info, format_args!($($arg)*));
+        $crate::logger::_log($crate::logger::LogLevel::Info, format_args!($($arg)*))
     };
 }
 
@@ -163,7 +163,7 @@ macro_rules! kinfoln {
 #[macro_export]
 macro_rules! kwarn {
     ($($arg:tt)*) => {
-        $crate::logger::_log($crate::logger::LogLevel::Warn, format_args!($($arg)*));
+        $crate::logger::_log($crate::logger::LogLevel::Warn, format_args!($($arg)*))
     };
 }
 
@@ -176,7 +176,7 @@ macro_rules! kwarnln {
 #[macro_export]
 macro_rules! kerror {
     ($($arg:tt)*) => {
-        $crate::logger::_log($crate::logger::LogLevel::Error, format_args!($($arg)*));
+        $crate::logger::_log($crate::logger::LogLevel::Error, format_args!($($arg)*))
     };
 }
 

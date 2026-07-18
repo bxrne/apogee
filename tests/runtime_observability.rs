@@ -11,8 +11,8 @@ extern crate alloc;
 
 use apogee::allocator;
 use apogee::task::Task;
-use apogee::{kdebugln, kerrorln, kinfoln, ktraceln, kwarnln};
 use apogee::task::executor::CoOpExecuter;
+use apogee::{kdebugln, kerrorln, kinfoln, ktraceln, kwarnln};
 use bootloader::BootInfo;
 use core::panic::PanicInfo;
 use x86_64::VirtAddr;

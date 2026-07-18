@@ -31,6 +31,7 @@ lazy_static! {
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
+        idt.general_protection_fault.set_handler_fn(gpf_handler);
         // Install the naked syscall ISR. The IDT entry stores only the
         // function address; we transmute the type so the x86_64 crate
         // accepts our naked `extern "C"` function. DPL=3 is required
@@ -75,6 +76,18 @@ pub fn init_idt() {
 }
 
 // Handlers for CPU exceptions and hardware interrupts
+
+// The general protection fault handler is called when a general protection fault occurs, which
+// happens when the CPU detects a violation of the protection rules (e.g., accessing a segment that
+// is not present or trying to execute a privileged instruction in user mode). The handler prints
+// the error code and the stack frame, and then panics.
+extern "x86-interrupt" fn gpf_handler(stack_frame: InterruptStackFrame, error_code: u64) {
+    println!(
+        "EXCEPTION: GENERAL PROTECTION FAULT\nError Code: {}\n{:#?}",
+        error_code, stack_frame
+    );
+    panic!("General protection fault");
+}
 
 // The page fault handler is called when a page fault occurs, which happens when the CPU tries to
 // access a page that is not present in memory or that the CPU does not have permission to access.

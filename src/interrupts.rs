@@ -1,8 +1,11 @@
 use crate::gdt;
 use crate::kdebugln;
+use crate::kwarnln;
 use crate::println;
+use crate::process;
 use crate::scheduler;
 use crate::task::keyboard::add_scancode;
+use crate::thread;
 use crate::userland;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
@@ -11,6 +14,31 @@ use x86_64::PrivilegeLevel;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use x86_64::registers::control::Cr2;
+
+/// `true` if the faulting context's code segment selector carries an
+/// RPL of 3 — i.e. the fault came from ring 3 (userland), not the
+/// kernel.
+fn faulted_in_ring3(stack_frame: &InterruptStackFrame) -> bool {
+    stack_frame.code_segment & 0b11 == 0b11
+}
+
+/// Kill the current user process in response to a ring-3 fault instead
+/// of panicking the whole kernel. A crash in userland should be
+/// recoverable; a crash in ring 0 is not.
+///
+/// Removes the process from the registry (best-effort: today there is
+/// at most one live user process) and tears down the host kernel
+/// thread via [`thread::exit_thread`], which never returns.
+fn kill_faulting_process(reason: &str) -> ! {
+    let pid_opt = process::PROCESSES.lock().keys().next().copied();
+    if let Some(pid) = pid_opt {
+        kwarnln!("FAULT", "killing pid {} ({})", pid.as_u64(), reason);
+        process::exit(pid, -1);
+    } else {
+        kwarnln!("FAULT", "{} from ring 3 but no process registered", reason);
+    }
+    thread::exit_thread();
+}
 // range is 32-47 for hardware interrupts (IRQs)
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -86,6 +114,9 @@ extern "x86-interrupt" fn gpf_handler(stack_frame: InterruptStackFrame, error_co
         "EXCEPTION: GENERAL PROTECTION FAULT\nError Code: {}\n{:#?}",
         error_code, stack_frame
     );
+    if faulted_in_ring3(&stack_frame) {
+        kill_faulting_process("general protection fault");
+    }
     panic!("General protection fault");
 }
 
@@ -101,6 +132,9 @@ extern "x86-interrupt" fn page_fault_handler(
         "EXCEPTION: PAGE FAULT\nAccessed Address: {:?}\nError Code: {:?}\n{:#?}",
         faulting_address, error_code, stack_frame
     );
+    if faulted_in_ring3(&stack_frame) {
+        kill_faulting_process("page fault");
+    }
     panic!("Page fault");
 }
 

@@ -20,6 +20,14 @@ name = "stack_overflow"
 harness = false
 
 [[test]]
+name = "fault_recovery_pf"
+harness = false
+
+[[test]]
+name = "fault_recovery_gpf"
+harness = false
+
+[[test]]
 name = "heap_allocation"
 
 [[test]]

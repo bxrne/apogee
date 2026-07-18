@@ -82,6 +82,46 @@ static USER_DEMO: &[u8] = &[
 
 const _: () = assert!(USER_DEMO.len() <= 4096, "user demo doesn't fit in one page");
 
+/// Hand-assembled ring-3 demo that deliberately faults by writing
+/// through an address nowhere near the mapped user region:
+///
+/// ```text
+///   mov rax, 0x0000500000000000
+///   mov qword ptr [rax], 0    ; page fault: not present, from ring 3
+///   hlt                       ; safety net — never reached
+/// jmp_self:
+///   jmp jmp_self
+/// ```
+///
+/// Used by [`crate::interrupts`] tests to verify a ring-3 page fault
+/// kills the offending process instead of panicking the kernel.
+#[rustfmt::skip]
+pub static CRASH_PF_DEMO: &[u8] = &[
+    0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x00, 0x00, // mov rax, 0x0000500000000000
+    0x48, 0xc7, 0x00, 0x00, 0x00, 0x00, 0x00,                   // mov qword [rax], 0
+    0xf4,                                                       // hlt
+    0xeb, 0xfe,                                                 // jmp $-0
+];
+
+/// Hand-assembled ring-3 demo that deliberately faults by executing a
+/// privileged instruction (`hlt` requires CPL=0, so ring 3 takes a
+/// general-protection fault instead):
+///
+/// ```text
+///   hlt                       ; #GP: privileged instruction from ring 3
+/// jmp_self:
+///   jmp jmp_self
+/// ```
+///
+/// Used by [`crate::interrupts`] tests to verify a ring-3 general
+/// protection fault kills the offending process instead of panicking
+/// the kernel.
+#[rustfmt::skip]
+pub static CRASH_GPF_DEMO: &[u8] = &[
+    0xf4,       // hlt
+    0xeb, 0xfe, // jmp $-0
+];
+
 /// Set up the demo user process: allocate + map code and stack pages
 /// (with `USER_ACCESSIBLE` set on all page-table levels), copy the
 /// demo program into the code page, and register the process. Returns
@@ -94,6 +134,24 @@ where
     M: Mapper<Size4KiB>,
     A: FrameAllocator<Size4KiB>,
 {
+    create_process_from_program(mapper, frame_allocator, USER_DEMO)
+}
+
+/// Same as [`create_demo_process`] but loads `program` instead of the
+/// built-in [`USER_DEMO`] blob. Used to launch the crash-test demos.
+pub fn create_process_from_program<M, A>(
+    mapper: &mut M,
+    frame_allocator: &mut A,
+    program: &[u8],
+) -> Result<ProcessId, &'static str>
+where
+    M: Mapper<Size4KiB>,
+    A: FrameAllocator<Size4KiB>,
+{
+    if program.len() > 4096 {
+        return Err("program doesn't fit in one page");
+    }
+
     let leaf_flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
     // Intermediate page-table levels must also be user-accessible,
@@ -121,11 +179,7 @@ where
         // Copy the demo program into the freshly-mapped code page.
         // The page is mapped writable for setup; ring 3 runs fine
         // against a writable code page (we don't enforce W^X yet).
-        core::ptr::copy_nonoverlapping(
-            USER_DEMO.as_ptr(),
-            USER_CODE_BASE as *mut u8,
-            USER_DEMO.len(),
-        );
+        core::ptr::copy_nonoverlapping(program.as_ptr(), USER_CODE_BASE as *mut u8, program.len());
     }
 
     // ---- stack page -----------------------------------------------

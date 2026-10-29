@@ -11,7 +11,7 @@ extern crate alloc;
 
 use apogee::allocator;
 use apogee::task::Task;
-use apogee::task::executor::CoOpExecuter;
+use apogee::task::executor::CoopExecutor;
 use apogee::{kdebugln, kerrorln, kinfoln, ktraceln, kwarnln};
 use bootloader::BootInfo;
 use core::panic::PanicInfo;
@@ -75,7 +75,7 @@ fn test_executor_spawn_updates_global_scheduler_counts() {
     let before_spawned = apogee::scheduler::SCHEDULER.tasks_spawned();
     let before_completed = apogee::scheduler::SCHEDULER.tasks_completed();
 
-    let mut exec = CoOpExecuter::new();
+    let mut exec = CoopExecutor::new();
     exec.spawn(Task::new(async {}));
     exec.spawn(Task::new(async {}));
 

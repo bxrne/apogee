@@ -15,7 +15,7 @@ use alloc::rc::Rc;
 use alloc::vec::Vec;
 use apogee::memory;
 use apogee::task::Task;
-use apogee::task::executor::CoOpExecuter;
+use apogee::task::executor::CoopExecutor;
 use apogee::task::keyboard;
 use apogee::thread;
 use apogee::userland;
@@ -99,7 +99,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Spin up the cooperative executor with a sample async task and the
     // asynchronous keyboard handler. `Executor::run` halts the CPU between
     // wakeups and never returns.
-    let mut executor = CoOpExecuter::new();
+    let mut executor = CoopExecutor::new();
     kinfoln!("EXEC", "spawning startup tasks");
     executor.spawn(Task::new(example_task()));
     executor.spawn(Task::new(keyboard::print_keypresses()));

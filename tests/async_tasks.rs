@@ -1,7 +1,7 @@
 //! Integration test: async_tasks.
 //!
-//! Drives both the [`SimpleExecutor`] and the production [`Executor`] with a
-//! handful of async functions and verifies that:
+//! Drives the production [`CoopExecutor`] with a handful of async
+//! functions and verifies that:
 //!
 //! * Multiple `async` tasks can be spawned and run to completion.
 //! * `.await` chains across multiple async functions yield the correct value.
@@ -23,8 +23,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use apogee::allocator;
 use apogee::task::Task;
-use apogee::task::executor::CoOpExecuter;
-use apogee::task::simple_executor::SimpleExecutor;
+use apogee::task::executor::CoopExecutor;
 use bootloader::BootInfo;
 use core::future::Future;
 use core::pin::Pin;
@@ -78,20 +77,20 @@ async fn bump_executor() {
 }
 
 #[test_case]
-fn simple_executor_runs_multiple_tasks() {
+fn executor_drains_multiple_ready_tasks() {
     SIMPLE_COUNTER.store(0, Ordering::SeqCst);
-    let mut exec = SimpleExecutor::new();
+    let mut exec = CoopExecutor::new();
     for _ in 0..4 {
         exec.spawn(Task::new(bump_simple()));
     }
-    exec.run();
+    exec.run_ready_tasks_for_test();
     assert_eq!(SIMPLE_COUNTER.load(Ordering::SeqCst), 4);
 }
 
 #[test_case]
 fn executor_runs_and_drains_ready_tasks() {
     EXECUTOR_COUNTER.store(0, Ordering::SeqCst);
-    let mut exec = CoOpExecuter::new();
+    let mut exec = CoopExecutor::new();
     for _ in 0..3 {
         exec.spawn(Task::new(bump_executor()));
     }
@@ -107,9 +106,9 @@ fn executor_runs_and_drains_ready_tasks() {
 #[test_case]
 fn await_chain_propagates_value() {
     AWAITED_VALUE.store(0, Ordering::SeqCst);
-    let mut exec = SimpleExecutor::new();
+    let mut exec = CoopExecutor::new();
     exec.spawn(Task::new(awaiting_task()));
-    exec.run();
+    exec.run_ready_tasks_for_test();
     assert_eq!(AWAITED_VALUE.load(Ordering::SeqCst), 42);
 }
 
@@ -140,7 +139,7 @@ fn pending_task_is_repolled_after_wake() {
         }
     }
 
-    let mut exec = CoOpExecuter::new();
+    let mut exec = CoopExecutor::new();
     exec.spawn(Task::new(async {
         WakeOnSecondPoll.await;
     }));
@@ -190,7 +189,7 @@ fn arc_array_queue_round_trip() {
 /// `run()`, we call into the executor through an inherent method we exposed
 /// on the `Executor` type for tests. This wrapper centralises the call so
 /// the rest of the test file stays readable.
-fn drive_until_idle(exec: &mut CoOpExecuter, max_iterations: usize) {
+fn drive_until_idle(exec: &mut CoopExecutor, max_iterations: usize) {
     for _ in 0..max_iterations {
         let before = exec.task_count();
         exec.run_ready_tasks_for_test();

@@ -1,11 +1,10 @@
 //! Production-quality cooperative executor with waker support.
 //!
-//! Unlike [`super::simple_executor::SimpleExecutor`], this executor only
-//! polls tasks that have been signalled as ready via a [`Waker`]. Tasks are
-//! identified by [`TaskId`] and woken by pushing their id onto a shared
-//! ready queue ([`task_queue`](Executor::task_queue)). When the queue is
-//! empty the executor halts the CPU with `hlt` until the next interrupt
-//! delivers more work.
+//! This executor only polls tasks that have been signalled as ready via a
+//! [`Waker`]. Tasks are identified by [`TaskId`] and woken by pushing their
+//! id onto a shared ready queue ([`task_queue`](Self::task_queue)). When
+//! the queue is empty the executor halts the CPU with `hlt` until the
+//! next interrupt delivers more work.
 
 use core::task::{Context, Poll, Waker};
 
@@ -24,7 +23,7 @@ use crate::{kdebugln, kinfoln};
 const TASK_QUEUE_CAPACITY: usize = 100;
 
 /// Cooperative task executor with waker support.
-pub struct CoOpExecuter {
+pub struct CoopExecutor {
     /// All currently spawned tasks, indexed by id for O(log n) lookup when a
     /// waker fires.
     tasks: BTreeMap<TaskId, Task>,
@@ -41,16 +40,16 @@ pub struct CoOpExecuter {
     started_tasks: BTreeSet<TaskId>,
 }
 
-impl Default for CoOpExecuter {
+impl Default for CoopExecutor {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl CoOpExecuter {
+impl CoopExecutor {
     /// Builds a new executor with empty task and waker collections.
     pub fn new() -> Self {
-        CoOpExecuter {
+        CoopExecutor {
             tasks: BTreeMap::new(),
             task_queue: Arc::new(ArrayQueue::new(TASK_QUEUE_CAPACITY)),
             waker_cache: BTreeMap::new(),
@@ -225,13 +224,13 @@ mod tests {
 
     #[test_case]
     fn test_new_executor_has_no_tasks() {
-        let exec = CoOpExecuter::new();
+        let exec = CoopExecutor::new();
         assert_eq!(exec.task_count(), 0);
     }
 
     #[test_case]
     fn test_spawn_inserts_task_and_enqueues_id() {
-        let mut exec = CoOpExecuter::new();
+        let mut exec = CoopExecutor::new();
         let task = Task::new(async {});
         let id = task.id();
         exec.spawn(task);
@@ -245,7 +244,7 @@ mod tests {
         static COUNT: AtomicUsize = AtomicUsize::new(0);
         COUNT.store(0, Ordering::SeqCst);
 
-        let mut exec = CoOpExecuter::new();
+        let mut exec = CoopExecutor::new();
         for _ in 0..3 {
             exec.spawn(Task::new(async {
                 COUNT.fetch_add(1, Ordering::SeqCst);
@@ -272,7 +271,7 @@ mod tests {
     fn test_run_ready_tasks_ignores_unknown_ids() {
         // Pushing an id with no corresponding task must not crash; it just
         // gets skipped on the next poll.
-        let mut exec = CoOpExecuter::new();
+        let mut exec = CoopExecutor::new();
         exec.task_queue
             .push(TaskId::new())
             .expect("queue should accept push");

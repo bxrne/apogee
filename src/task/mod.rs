@@ -7,8 +7,6 @@
 //!   produces no value (it is run for its side effects only).
 //! * [`TaskId`]: a process-wide unique identifier for a task, used by the
 //!   waker machinery to enqueue specific tasks for re-polling.
-//! * [`simple_executor`]: a basic, busy-loop executor that ignores wakers —
-//!   useful for bring-up and tests.
 //! * [`executor`]: the production executor that uses waker notifications to
 //!   only poll tasks that have signalled progress.
 //! * [`keyboard`]: the asynchronous keyboard input task and its supporting
@@ -23,7 +21,6 @@ use alloc::boxed::Box;
 
 pub mod executor;
 pub mod keyboard;
-pub mod simple_executor;
 
 /// A unique identifier assigned to every spawned [`Task`].
 ///

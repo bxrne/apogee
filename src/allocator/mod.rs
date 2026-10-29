@@ -1,8 +1,12 @@
 //! Dynamic memory allocation and heap management.
 //!
-//! This module provides the global allocator implementation using the
-//! `linked_list_allocator` crate, enabling `alloc::Box`, `alloc::Vec`,
-//! and `alloc::Rc` (reference counting) in the bare-metal kernel.
+//! This module provides the global allocator implementation: a slab-style
+//! [`fixed_size_block`] allocator with a coalescing [`linkedlist`] fallback.
+//! Together they enable `alloc::Box`, `alloc::Vec`, and `alloc::Rc`
+//! (reference counting) in the bare-metal kernel.
+//!
+//! [`bump`] is a monotonic allocator kept for boot-time / scratch use; it does
+//! not reclaim individual blocks.
 
 use x86_64::{
     VirtAddr,

@@ -82,16 +82,15 @@ unsafe impl GlobalAlloc for Locked<FixedSizeBlockAllocator> {
                 // layout, so it is a valid, properly aligned, owned block of
                 // at least BLOCK_SIZES[index] bytes — enough for a ListNode.
                 unsafe {
-                    new_node_ptr.write(ListNode::new(0));
+                    new_node_ptr.write(ListNode::new(BLOCK_SIZES[index]));
                     let head = allocator.list_heads[index].take();
                     (*new_node_ptr).set_next(head);
                     allocator.list_heads[index] = Some(&mut *new_node_ptr);
                 }
             }
-            // Block smaller than a ListNode (or no slab at all): hand back to
-            // the underlying allocator. Since the fallback is currently bump-
-            // style, it only reclaims when its allocation count returns to
-            // zero — these blocks are effectively leaked until then.
+            // Block smaller than a ListNode (or no slab at all): hand it back
+            // to the fallback allocator, which is a real coalescing free list
+            // and will reuse it.
             _ => {
                 // SAFETY: forwarded from `GlobalAlloc::dealloc` contract.
                 unsafe { allocator.fallback_allocator.dealloc(ptr, layout) };

@@ -49,9 +49,11 @@ Custom target `x86_64-unknown-none` with:
 
 ## Memory Management
 
-The kernel implements dynamic memory allocation using a linked-list allocator:
+The kernel implements dynamic memory allocation using a fixed-size-block
+(slab) allocator with a coalescing linked-list fallback:
 
-- **Allocator**: `linked_list_allocator` crate provides a bump allocator with free list management
+- **Allocator**: slab lists for sizes 8 B–4 KiB, backed by an address-ordered
+  free list that reuses freed regions and merges adjacent ones
 - **Heap**: 100 KiB heap starting at virtual address `0x_4444_4444_0000`
 - **Reference Counting**: Full `alloc::Rc<T>` support for shared ownership
 - **Collections**: `Vec<T>`, `Box<T>`, and `Rc<T>` all work out of the box

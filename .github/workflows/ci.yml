@@ -36,7 +36,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y qemu-system-x86
 
       - name: Install bootimage
-        run: cargo install bootimage
+        run: cargo install bootimage --version 0.10.5 --locked
 
       - name: Build
         run: cargo build

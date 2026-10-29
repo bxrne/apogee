@@ -6,16 +6,29 @@ A minimal x86-64 bare-metal kernel written in Rust. Runs directly on hardware or
 
 ## Requirements
 
-- [Rust](https://rustup.rs/) (nightly, pinned via `rust-toolchain.toml`)
-- [bootimage](https://github.com/rust-osdev/bootimage): `cargo install bootimage`
-- [QEMU](https://www.qemu.org/): `sudo apt install qemu-system-x86`
+Everything is provided by the Nix flake:
+
+- Rust nightly, pinned to the same date as `rust-toolchain.toml`
+- `rust-src`, `llvm-tools-preview`, and `rust-analyzer`
+- [bootimage](https://github.com/rust-osdev/bootimage) 0.10.5
+- [QEMU](https://www.qemu.org/) and GDB
+
+Without Nix, install [Rust](https://rustup.rs/) (nightly, pinned via
+`rust-toolchain.toml`), `cargo install bootimage`, and `qemu-system-x86`.
 
 ## Usage
 
 ```sh
+nix develop      # flake dev shell, or `nix-shell` via shell.nix
+# or, with nix-direnv:
+direnv allow
+
 cargo run        # build bootimage and launch in QEMU
 cargo test       # run all test binaries in headless QEMU
 ```
+
+The shell gives the nightly toolchain and builds `bootimage` from the
+published crate, so no `cargo install` step is needed.
 
 Individual test suites:
 

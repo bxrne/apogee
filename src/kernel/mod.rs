@@ -22,7 +22,6 @@ use service::{
 };
 
 use crate::process::{Process, ProcessId, ProcessSnapshot};
-use crate::thread::ThreadId;
 
 /// The one kernel root. There is deliberately no other global service
 /// handle: a subsystem that needs another subsystem asks this object.
@@ -133,11 +132,6 @@ impl Kernel {
 
     pub fn process_count(&self) -> usize {
         self.process.count()
-    }
-
-    /// Spawn a kernel thread from kernel code.
-    pub fn spawn_thread(&self, entry: extern "C" fn() -> !, process: ProcessId) -> ThreadId {
-        self.thread.spawn(entry, process)
     }
 }
 

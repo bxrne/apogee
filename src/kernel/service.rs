@@ -79,7 +79,7 @@ impl ThreadService {
     }
 
     pub fn spawn(&self, entry: extern "C" fn() -> !, process: ProcessId) -> ThreadId {
-        thread::THREADS.lock().spawn_in_process(entry, process)
+        thread::spawn(entry, process)
     }
 
     pub fn yield_now(&self) {

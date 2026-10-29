@@ -13,9 +13,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
-use apogee::kernel::KERNEL;
 use apogee::memory;
-use apogee::process::ProcessId;
 use apogee::task::Task;
 use apogee::task::executor::CoOpExecuter;
 use apogee::task::keyboard;
@@ -177,8 +175,8 @@ fn sample_heap_allocations() {
 /// and execution falls through to the async executor.
 fn threading_demo() {
     kinfoln!("THRD", "spawning two kernel threads");
-    KERNEL.spawn_thread(worker_a, ProcessId::KERNEL);
-    KERNEL.spawn_thread(worker_b, ProcessId::KERNEL);
+    thread::spawn_kernel(worker_a);
+    thread::spawn_kernel(worker_b);
 
     // Drive the scheduler from the bootstrap thread until every spawned
     // thread has called `exit_thread` and the ready queue is empty again.

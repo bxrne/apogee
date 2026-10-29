@@ -29,7 +29,7 @@ use x86_64::instructions::interrupts;
 /// Per-thread stack size. 16 KiB is plenty for the trivial demo workloads
 /// driven by this module and keeps heap pressure low on a small kernel
 /// heap.
-pub const STACK_SIZE: usize = 16 * 1024;
+const STACK_SIZE: usize = 16 * 1024;
 
 /// Saved CPU state for a kernel thread.
 ///
@@ -39,16 +39,13 @@ pub const STACK_SIZE: usize = 16 * 1024;
 /// other side of the swap.
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
-pub struct Context {
+struct Context {
     rsp: u64,
 }
 
 /// Process-wide unique identifier for a kernel thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ThreadId(u64);
-
-/// Reserved id for the bootstrap (initial) kernel control flow.
-pub const BOOTSTRAP_ID: ThreadId = ThreadId(0);
 
 impl ThreadId {
     fn new() -> Self {
@@ -62,19 +59,18 @@ impl ThreadId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThreadState {
-    Ready,
-    Running,
-    Finished,
-}
+/// Reserved id for the bootstrap (initial) kernel control flow.
+const BOOTSTRAP_ID: ThreadId = ThreadId(0);
 
 /// A kernel thread: an entry function plus an owned stack and saved
 /// register state.
-pub struct KernelThread {
+///
+/// Kept private to this module: callers hand an entry function to
+/// [`spawn`] and receive a [`ThreadId`]; nothing outside the scheduler
+/// inspects or constructs a thread directly.
+struct KernelThread {
     id: ThreadId,
     process: ProcessId,
-    state: ThreadState,
     context: Context,
     /// Backing storage for the thread stack. Held in a `Box` so that the
     /// allocation has a stable address for the lifetime of the thread —
@@ -83,18 +79,12 @@ pub struct KernelThread {
 }
 
 impl KernelThread {
-    /// Build a new ready-to-run kernel thread that will start by jumping to
-    /// `entry`. `entry` must be `extern "C" fn() -> !` so the compiler does
-    /// not insert a function epilogue: when the thread "completes" it must
-    /// call [`exit_thread`] instead of returning.
-    pub fn new(entry: extern "C" fn() -> !) -> Self {
-        Self::new_in_process(entry, ProcessId::KERNEL)
-    }
-
-    /// Build a new kernel thread that will start by jumping to `entry`,
-    /// tagged as belonging to `process`. Today only `ProcessId::KERNEL`
-    /// is meaningful.
-    pub fn new_in_process(entry: extern "C" fn() -> !, process: ProcessId) -> Self {
+    /// Build a ready-to-run kernel thread that starts by jumping to `entry`
+    /// and is tagged as belonging to `process`. `entry` must be
+    /// `extern "C" fn() -> !` so the compiler does not insert a function
+    /// epilogue: when the thread "completes" it must call
+    /// [`exit_thread`] instead of returning.
+    fn new(entry: extern "C" fn() -> !, process: ProcessId) -> Self {
         let mut stack: Box<[u8; STACK_SIZE]> = Box::new([0; STACK_SIZE]);
         // Stacks grow downward; start at the high end of the buffer.
         let stack_top = unsafe { stack.as_mut_ptr().add(STACK_SIZE) } as u64;
@@ -118,22 +108,17 @@ impl KernelThread {
         KernelThread {
             id: ThreadId::new(),
             process,
-            state: ThreadState::Ready,
             context: Context { rsp: sp },
             _stack: stack,
         }
     }
 
-    pub fn id(&self) -> ThreadId {
+    fn id(&self) -> ThreadId {
         self.id
     }
 
-    pub fn process(&self) -> ProcessId {
+    fn process(&self) -> ProcessId {
         self.process
-    }
-
-    pub fn state(&self) -> ThreadState {
-        self.state
     }
 }
 
@@ -168,9 +153,14 @@ unsafe extern "C" fn switch_context(_prev: *mut Context, _next: *const Context) 
 }
 
 /// Global cooperative kernel-thread scheduler.
-pub static THREADS: Locked<ThreadScheduler> = Locked::new(ThreadScheduler::new());
+static THREADS: Locked<ThreadScheduler> = Locked::new(ThreadScheduler::new());
 
-pub struct ThreadScheduler {
+/// The global ready-queue bookkeeping for kernel threads.
+///
+/// Private on purpose: callers interact with the scheduler exclusively
+/// through the module-level functions at the bottom of this module
+/// ([`spawn`], [`yield_now`], [`exit_thread`], ...).
+struct ThreadScheduler {
     threads: BTreeMap<ThreadId, Box<KernelThread>>,
     ready: VecDeque<ThreadId>,
     current: ThreadId,
@@ -187,7 +177,7 @@ pub struct ThreadScheduler {
 }
 
 impl ThreadScheduler {
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         ThreadScheduler {
             threads: BTreeMap::new(),
             ready: VecDeque::new(),
@@ -197,19 +187,8 @@ impl ThreadScheduler {
         }
     }
 
-    /// Spawn a new kernel thread that will start by jumping to `entry`.
-    /// Returns the new thread's id.
-    pub fn spawn(&mut self, entry: extern "C" fn() -> !) -> ThreadId {
-        self.spawn_in_process(entry, ProcessId::KERNEL)
-    }
-
-    /// Spawn a new kernel thread tagged as belonging to `process`.
-    pub fn spawn_in_process(
-        &mut self,
-        entry: extern "C" fn() -> !,
-        process: ProcessId,
-    ) -> ThreadId {
-        let thread = Box::new(KernelThread::new_in_process(entry, process));
+    fn spawn(&mut self, entry: extern "C" fn() -> !, process: ProcessId) -> ThreadId {
+        let thread = Box::new(KernelThread::new(entry, process));
         let id = thread.id();
         self.threads.insert(id, thread);
         self.ready.push_back(id);
@@ -217,55 +196,33 @@ impl ThreadScheduler {
         id
     }
 
-    pub fn thread_count(&self) -> usize {
+    fn thread_count(&self) -> usize {
         self.threads.len()
     }
 
-    pub fn ready_count(&self) -> usize {
+    fn ready_count(&self) -> usize {
         self.ready.len()
     }
 
-    pub fn current(&self) -> ThreadId {
+    fn current(&self) -> ThreadId {
         self.current
     }
 }
 
-/// The process tag of the currently running kernel thread.
+/// Spawn a new kernel thread that starts by jumping to `entry` and is
+/// tagged as belonging to `process`.
 ///
-/// The bootstrap thread belongs to the implicit kernel process.
-pub fn current_process() -> ProcessId {
-    let sched = THREADS.lock();
-    if sched.current == BOOTSTRAP_ID {
-        return ProcessId::KERNEL;
-    }
-    sched
-        .threads
-        .get(&sched.current)
-        .map(|thread| thread.process())
-        .unwrap_or(ProcessId::KERNEL)
+/// Returns the new thread's id.
+pub fn spawn(entry: extern "C" fn() -> !, process: ProcessId) -> ThreadId {
+    THREADS.lock().spawn(entry, process)
 }
 
-/// Id of the currently running kernel thread.
-pub fn current_id() -> ThreadId {
-    THREADS.lock().current()
-}
-
-/// Number of runnable kernel threads, excluding the running one.
-pub fn ready_count() -> usize {
-    THREADS.lock().ready_count()
-}
-
-/// Drop any thread that called [`exit_thread`] before us. Safe to call
-/// from any thread *other* than the one being reaped, which is the
-/// invariant established by exit_thread + the round-robin queue.
-fn drain_reaper() {
-    // Take the box out under the lock with IRQs disabled, then drop it
-    // outside the lock so the allocator runs without holding it.
-    let to_drop = interrupts::without_interrupts(|| THREADS.lock().reaper.take());
-    if to_drop.is_some() {
-        SCHEDULER.note_thread_exited();
-    }
-    drop(to_drop);
+/// Spawn a new kernel thread (i.e. one tagged as belonging to the
+/// kernel process itself) that starts by jumping to `entry`.
+///
+/// Returns the new thread's id.
+pub fn spawn_kernel(entry: extern "C" fn() -> !) -> ThreadId {
+    spawn(entry, ProcessId::KERNEL)
 }
 
 /// Voluntarily yield the CPU to the next ready thread.
@@ -275,8 +232,9 @@ fn drain_reaper() {
 /// re-queued at the back of the ready list and the next ready thread is
 /// switched in.
 pub fn yield_now() {
-    // First, reclaim any thread that exited before we were scheduled.
-    // We are not standing on its stack, so dropping the box is safe.
+    // First, reclaim any thread that exited before us. Safe to call from
+    // any thread *other* than the one being reaped, which is the invariant
+    // established by exit_thread + the round-robin queue.
     drain_reaper();
 
     // Decide who we're switching to/from while holding the scheduler
@@ -285,7 +243,7 @@ pub fn yield_now() {
     // the incoming thread will need to re-acquire it.
     //
     // IRQs are disabled across the lock acquisition to prevent any
-    // future IRQ that touches `THREADS` from deadlocking against us.
+    // future IRQ that touches the scheduler from deadlocking against us.
     let result = interrupts::without_interrupts(|| {
         let mut sched = THREADS.lock();
 
@@ -301,7 +259,6 @@ pub fn yield_now() {
                 .threads
                 .get_mut(&prev_id)
                 .expect("yield_now: current thread missing from map");
-            t.state = ThreadState::Ready;
             let p = &mut t.context as *mut Context;
             sched.ready.push_back(prev_id);
             p
@@ -314,7 +271,6 @@ pub fn yield_now() {
                 .threads
                 .get_mut(&next_id)
                 .expect("yield_now: next ready thread missing from map");
-            t.state = ThreadState::Running;
             &t.context as *const Context
         };
 
@@ -357,8 +313,7 @@ pub fn exit_thread() -> ! {
             // it now: we are still running on the stack it owns. The
             // next scheduler operation (on a different stack) will
             // drop it.
-            if let Some(mut boxed) = sched.threads.remove(&prev_id) {
-                boxed.state = ThreadState::Finished;
+            if let Some(boxed) = sched.threads.remove(&prev_id) {
                 debug_assert!(
                     sched.reaper.is_none(),
                     "reaper slot should have been drained"
@@ -380,7 +335,6 @@ pub fn exit_thread() -> ! {
                 .threads
                 .get_mut(&next_id)
                 .expect("exit_thread: next ready thread missing from map");
-            t.state = ThreadState::Running;
             &t.context as *const Context
         }
     });
@@ -395,6 +349,49 @@ pub fn exit_thread() -> ! {
     // nothing will ever switch back in to `scratch`. Hint to the
     // optimiser and satisfy `-> !`.
     unreachable!("exit_thread resumed after switch");
+}
+
+/// The process tag of the currently running kernel thread.
+///
+/// The bootstrap thread belongs to the implicit kernel process.
+pub fn current_process() -> ProcessId {
+    let sched = THREADS.lock();
+    if sched.current == BOOTSTRAP_ID {
+        return ProcessId::KERNEL;
+    }
+    sched
+        .threads
+        .get(&sched.current)
+        .map(|thread| thread.process())
+        .unwrap_or(ProcessId::KERNEL)
+}
+
+/// Id of the currently running kernel thread.
+pub fn current_id() -> ThreadId {
+    THREADS.lock().current()
+}
+
+/// Number of runnable kernel threads, excluding the running one.
+pub fn ready_count() -> usize {
+    THREADS.lock().ready_count()
+}
+
+/// Number of kernel threads the scheduler is currently tracking.
+pub fn thread_count() -> usize {
+    THREADS.lock().thread_count()
+}
+
+/// Drop any thread that called [`exit_thread`] before us. Safe to call
+/// from any thread *other* than the one being reaped, which is the
+/// invariant established by exit_thread + the round-robin queue.
+fn drain_reaper() {
+    // Take the box out under the lock with IRQs disabled, then drop it
+    // outside the lock so the allocator runs without holding it.
+    let to_drop = interrupts::without_interrupts(|| THREADS.lock().reaper.take());
+    if to_drop.is_some() {
+        SCHEDULER.note_thread_exited();
+    }
+    drop(to_drop);
 }
 
 #[cfg(test)]
@@ -417,8 +414,7 @@ mod tests {
         extern "C" fn dummy() -> ! {
             loop {}
         }
-        let thread = KernelThread::new(dummy);
-        assert_eq!(thread.state(), ThreadState::Ready);
+        let thread = KernelThread::new(dummy, ProcessId::KERNEL);
         assert_eq!(thread.process(), ProcessId::KERNEL);
         // Saved rsp must lie within the owned stack buffer and be
         // 16-byte aligned + 8 (six register slots below the alignment).
@@ -436,7 +432,7 @@ mod tests {
         extern "C" fn dummy() -> ! {
             loop {}
         }
-        let id = sched.spawn(dummy);
+        let id = sched.spawn(dummy, ProcessId::KERNEL);
         assert_eq!(sched.thread_count(), 1);
         assert_eq!(sched.ready_count(), 1);
         assert_eq!(sched.ready.front().copied(), Some(id));
@@ -459,7 +455,7 @@ mod tests {
         // bootstrap thread.
         {
             let mut sched = THREADS.lock();
-            sched.spawn(ping_thread);
+            sched.spawn(ping_thread, ProcessId::KERNEL);
         }
         // First yield: bootstrap -> ping_thread (runs first half, yields).
         yield_now();

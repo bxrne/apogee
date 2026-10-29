@@ -211,7 +211,7 @@ where
 /// `pid`. The pid travels as the thread's process tag, so there is no
 /// global hand-off slot.
 pub fn spawn_user_thread(pid: ProcessId) {
-    KERNEL.spawn_thread(user_thread_entry, pid);
+    thread::spawn(user_thread_entry, pid);
 }
 
 extern "C" fn user_thread_entry() -> ! {

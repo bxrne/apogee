@@ -35,6 +35,7 @@ The shell gives the nightly toolchain and builds `bootimage` from the published 
 - Cooperative kernel threads with real context switches, plus a lock-free scheduler counter.
 - Cooperative async tasks on top of waker notifications.
 - Interrupt handlers that use lock-free service entry points.
+- Boot demos and allocator smoke checks live in the `apogee::demos` module and are wired into the boot sequence from the kernel entry point.
 
 ## Memory management
 

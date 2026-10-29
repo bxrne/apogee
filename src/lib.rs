@@ -23,6 +23,7 @@ extern crate alloc; // using alloc crate from the standard library for heap allo
 use bootloader::{BootInfo, entry_point};
 
 pub mod allocator;
+pub mod demos;
 pub mod gdt;
 pub mod interrupts;
 pub mod kernel;

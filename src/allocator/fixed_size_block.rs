@@ -42,6 +42,23 @@ impl FixedSizeBlockAllocator {
     fn fallback_alloc(&mut self, layout: Layout) -> *mut u8 {
         self.fallback_allocator.alloc(layout)
     }
+
+    /// Heap accounting: free bytes in the fallback plus blocks parked in
+    /// the size-class lists.
+    pub fn stats(&self) -> super::HeapStats {
+        let mut cached_bytes = 0;
+        for (index, head) in self.list_heads.iter().enumerate() {
+            let mut block = head.as_deref();
+            while let Some(node) = block {
+                cached_bytes += BLOCK_SIZES[index];
+                block = node.next();
+            }
+        }
+        super::HeapStats {
+            heap_size: self.fallback_allocator.heap_size(),
+            free_bytes: self.fallback_allocator.free_bytes() + cached_bytes,
+        }
+    }
 }
 
 unsafe impl GlobalAlloc for Locked<FixedSizeBlockAllocator> {

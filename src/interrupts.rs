@@ -1,10 +1,9 @@
 use crate::gdt;
 use crate::kdebugln;
+use crate::kernel::{Caller, KERNEL, Request};
 use crate::kwarnln;
 use crate::println;
-use crate::process;
-use crate::scheduler;
-use crate::task::keyboard::add_scancode;
+use crate::process::ProcessId;
 use crate::thread;
 use crate::userland;
 use lazy_static::lazy_static;
@@ -22,21 +21,17 @@ fn faulted_in_ring3(stack_frame: &InterruptStackFrame) -> bool {
     stack_frame.code_segment & 0b11 == 0b11
 }
 
-/// Kill the current user process in response to a ring-3 fault instead
-/// of panicking the whole kernel. A crash in userland should be
-/// recoverable; a crash in ring 0 is not.
+/// Kill the process that faulted instead of panicking the whole kernel.
 ///
-/// Removes the process from the registry (best-effort: today there is
-/// at most one live user process) and tears down the host kernel
-/// thread via [`thread::exit_thread`], which never returns.
+/// The host kernel thread carries the pid, so this cannot select the
+/// wrong process when more than one exists.
 fn kill_faulting_process(reason: &str) -> ! {
-    let pid_opt = process::PROCESSES.lock().keys().next().copied();
-    if let Some(pid) = pid_opt {
-        kwarnln!("FAULT", "killing pid {} ({})", pid.as_u64(), reason);
-        process::exit(pid, -1);
-    } else {
-        kwarnln!("FAULT", "{} from ring 3 but no process registered", reason);
+    let pid = thread::current_process();
+    if pid == ProcessId::KERNEL {
+        panic!("ring-3 fault without a process context: {reason}");
     }
+    kwarnln!("FAULT", "killing pid {} ({})", pid.as_u64(), reason);
+    let _ = KERNEL.call(Caller::User(pid), Request::ProcessExit { pid, code: -1 });
     thread::exit_thread();
 }
 // range is 32-47 for hardware interrupts (IRQs)
@@ -161,9 +156,8 @@ extern "x86-interrupt" fn double_fault_handler(
 // The timer interrupt handler is called by the hardware timer at regular intervals (e.g., every
 // 10ms).
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    // Lock-free tick — safe from interrupt context, no deadlock window
-    // against any non-IRQ caller.
-    scheduler::SCHEDULER.tick();
+    // Lock-free tick — safe from interrupt context.
+    KERNEL.tick();
 
     unsafe {
         PICS.lock()
@@ -180,7 +174,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     // Doing the decode here would be slow and would block other interrupts.
     let mut port = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
-    add_scancode(scancode);
+    KERNEL.on_scancode(scancode);
 
     unsafe {
         PICS.lock()

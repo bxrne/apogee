@@ -31,6 +31,19 @@ pub const HEAP_START: usize = 0x_4444_4444_0000;
 /// Size of the heap in bytes (100 KiB).
 pub const HEAP_SIZE: usize = 100 * 1024;
 
+/// Point-in-time heap accounting.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HeapStats {
+    pub heap_size: usize,
+    pub free_bytes: usize,
+}
+
+/// Snapshot the global heap. Takes the allocator lock, so do not call this
+/// from an interrupt handler.
+pub fn stats() -> HeapStats {
+    ALLOCATOR.lock().stats()
+}
+
 /// Initializes the kernel heap by mapping virtual pages to physical frames.
 ///
 /// This function:

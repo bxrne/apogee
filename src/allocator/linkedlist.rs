@@ -54,6 +54,11 @@ impl ListNode {
     pub fn set_next(&mut self, next: Option<&'static mut ListNode>) {
         self.next = next;
     }
+
+    /// Peek at the next free region without unlinking it.
+    pub fn next(&self) -> Option<&ListNode> {
+        self.next.as_deref()
+    }
 }
 
 /// Smallest region we can track. Anything below this is either absorbed into

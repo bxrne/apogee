@@ -13,7 +13,9 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
+use apogee::kernel::KERNEL;
 use apogee::memory;
+use apogee::process::ProcessId;
 use apogee::task::Task;
 use apogee::task::executor::CoOpExecuter;
 use apogee::task::keyboard;
@@ -130,7 +132,7 @@ fn userland_demo(
     // Round-robin between the bootstrap thread and the host kernel
     // thread until the user process has exited and its host thread is
     // gone (drained out of the reaper slot).
-    while thread::THREADS.lock().ready_count() > 0 {
+    while thread::ready_count() > 0 {
         thread::yield_now();
     }
     // One more yield to drain the reaper if the user thread was the
@@ -175,15 +177,12 @@ fn sample_heap_allocations() {
 /// and execution falls through to the async executor.
 fn threading_demo() {
     kinfoln!("THRD", "spawning two kernel threads");
-    {
-        let mut sched = thread::THREADS.lock();
-        sched.spawn(worker_a);
-        sched.spawn(worker_b);
-    }
+    KERNEL.spawn_thread(worker_a, ProcessId::KERNEL);
+    KERNEL.spawn_thread(worker_b, ProcessId::KERNEL);
 
     // Drive the scheduler from the bootstrap thread until every spawned
     // thread has called `exit_thread` and the ready queue is empty again.
-    while thread::THREADS.lock().ready_count() > 0 {
+    while thread::ready_count() > 0 {
         thread::yield_now();
     }
 
@@ -191,7 +190,7 @@ fn threading_demo() {
 }
 
 extern "C" fn worker_a() -> ! {
-    let id = thread::THREADS.lock().current().as_u64();
+    let id = thread::current_id().as_u64();
     kinfoln!("THRD", "thread {}: A running, about to yield", id);
     thread::yield_now();
     kinfoln!("THRD", "thread {}: A resumed, exiting", id);
@@ -199,7 +198,7 @@ extern "C" fn worker_a() -> ! {
 }
 
 extern "C" fn worker_b() -> ! {
-    let id = thread::THREADS.lock().current().as_u64();
+    let id = thread::current_id().as_u64();
     kinfoln!("THRD", "thread {}: B running, about to yield", id);
     thread::yield_now();
     kinfoln!("THRD", "thread {}: B resumed, exiting", id);

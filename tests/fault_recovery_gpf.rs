@@ -10,7 +10,7 @@
 #![no_std]
 #![no_main]
 
-use apogee::process::PROCESSES;
+use apogee::process;
 use apogee::scheduler::SCHEDULER;
 use apogee::userland;
 use apogee::{QemuExitCode, exit_qemu, memory, serial_print, serial_println, thread};
@@ -46,7 +46,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // been reaped. If the GPF handler panicked instead of killing the
     // process, we never get here at all — the panic handler below
     // reports the test as failed.
-    while thread::THREADS.lock().ready_count() > 0 {
+    while thread::ready_count() > 0 {
         thread::yield_now();
     }
     thread::yield_now();
@@ -57,7 +57,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         "crashed process should have been reaped from the scheduler"
     );
     assert!(
-        PROCESSES.lock().get(&pid).is_none(),
+        !process::is_registered(pid),
         "crashed process should have been removed from the registry"
     );
 

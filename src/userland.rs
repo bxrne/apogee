@@ -1,29 +1,16 @@
-//! Ring-3 (userland) transitions, syscall dispatch, and the demo
-//! user program.
+//! Ring-3 (userland) transitions, the syscall adapter, and the demo
+//! programs.
 //!
 //! There is no userland loader yet: the demo program is hand-assembled
 //! machine code embedded in the kernel image (see [`USER_DEMO`]). To
-//! launch it we
+//! launch it we map a code page and a stack page, register the process
+//! with the kernel's process service, and spawn a host kernel thread
+//! tagged with the new pid. That thread drops into ring 3 via `iretq`.
 //!
-//! 1. allocate a code frame and a stack frame from the kernel frame
-//!    allocator,
-//! 2. map both at fixed virtual addresses inside the user address
-//!    range with `USER_ACCESSIBLE` flags (and the same on every
-//!    intermediate page-table level),
-//! 3. copy [`USER_DEMO`] into the code page,
-//! 4. register a [`Process`] in the global registry,
-//! 5. spawn a kernel thread whose entry function calls
-//!    [`enter_userland`] to drop into ring 3 via `iretq`.
-//!
-//! When the user program issues `int 0x80`, the CPU walks the IDT to
-//! the gate installed at [`crate::interrupts::SYSCALL_VECTOR`] (DPL=3
-//! so ring 3 may invoke it), switches to the kernel stack registered
-//! in `TSS.privilege_stack_table[0]`, and jumps to [`syscall_isr`].
-//! That naked stub saves the user's GP regs, calls
-//! [`syscall_dispatch`] in Rust, restores the regs, and `iretq`s back
-//! to user mode. `sys_exit` instead reaps the process and tears down
-//! the host kernel thread via [`thread::exit_thread`], so control
-//! returns to the bootstrap thread rather than ring 3.
+//! `int 0x80` is only a transport: [`syscall_dispatch`] decodes the
+//! register frame into a [`Request`] and calls [`KERNEL`]. The same
+//! requests are available to kernel callers, so authorization and
+//! validation live in one place.
 
 use core::arch::{asm, naked_asm};
 use x86_64::VirtAddr;
@@ -32,9 +19,10 @@ use x86_64::structures::paging::{
 };
 
 use crate::gdt;
+use crate::kernel::{Caller, KERNEL, Request, Response, SysError};
 use crate::kinfoln;
 use crate::kwarnln;
-use crate::process::{self, Process, ProcessId};
+use crate::process::ProcessId;
 use crate::thread;
 
 /// Virtual address of the user code page in every process's address
@@ -49,9 +37,10 @@ pub const USER_STACK_TOP: u64 = 0x4000_0000_3000;
 /// Hand-assembled user-mode demo program.
 ///
 /// ```text
-///   mov rax, 1                ; sys_print
-///   lea rdi, [rip + msg]
-///   mov rsi, msg_len
+///   mov rax, 1                ; sys_write
+///   mov rdi, 1                ; fd = stdout
+///   lea rsi, [rip + msg]
+///   mov rdx, msg_len
 ///   int 0x80
 ///   mov rax, 0                ; sys_exit
 ///   xor rdi, rdi
@@ -67,8 +56,9 @@ pub const USER_STACK_TOP: u64 = 0x4000_0000_3000;
 #[rustfmt::skip]
 static USER_DEMO: &[u8] = &[
     0x48, 0xc7, 0xc0, 0x01, 0x00, 0x00, 0x00, // mov rax, 1
-    0x48, 0x8d, 0x3d, 0x18, 0x00, 0x00, 0x00, // lea rdi, [rip+0x18]
-    0x48, 0xc7, 0xc6, 0x13, 0x00, 0x00, 0x00, // mov rsi, 19
+    0x48, 0xc7, 0xc7, 0x01, 0x00, 0x00, 0x00, // mov rdi, 1
+    0x48, 0x8d, 0x35, 0x18, 0x00, 0x00, 0x00, // lea rsi, [rip+0x18]
+    0x48, 0xc7, 0xc2, 0x13, 0x00, 0x00, 0x00, // mov rdx, 19
     0xcd, 0x80,                               // int 0x80
     0x48, 0xc7, 0xc0, 0x00, 0x00, 0x00, 0x00, // mov rax, 0
     0x48, 0x31, 0xff,                         // xor rdi, rdi
@@ -200,8 +190,13 @@ where
             .flush();
     }
 
-    let process = Process::new(VirtAddr::new(USER_CODE_BASE), VirtAddr::new(USER_STACK_TOP));
-    let pid = process::register(process);
+    let entry = VirtAddr::new(USER_CODE_BASE);
+    let stack_top = VirtAddr::new(USER_STACK_TOP);
+    let pid = match KERNEL.call(Caller::Kernel, Request::ProcessCreate { entry, stack_top }) {
+        Response::Process(pid) => pid,
+        Response::Err(_) => return Err("process registration denied"),
+        _ => return Err("process registration returned an unexpected response"),
+    };
     kinfoln!(
         "USER",
         "created process {} entry={:#x} stack_top={:#x}",
@@ -212,29 +207,23 @@ where
     Ok(pid)
 }
 
-/// Stash for the pid the next [`user_thread_entry`] should pick up.
-/// We currently support a single user process at a time, so a single
-/// slot is enough.
-static PENDING_PID: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-
 /// Spawn a kernel thread that, when scheduled, drops into ring 3 for
-/// `pid`. When the user program calls `sys_exit` the host kernel
-/// thread is torn down via [`thread::exit_thread`], so the bootstrap
-/// thread regains the CPU and the rest of `kernel_main` proceeds.
+/// `pid`. The pid travels as the thread's process tag, so there is no
+/// global hand-off slot.
 pub fn spawn_user_thread(pid: ProcessId) {
-    PENDING_PID.store(pid.as_u64(), core::sync::atomic::Ordering::SeqCst);
-    let mut sched = thread::THREADS.lock();
-    sched.spawn(user_thread_entry);
+    KERNEL.spawn_thread(user_thread_entry, pid);
 }
 
 extern "C" fn user_thread_entry() -> ! {
-    let raw = PENDING_PID.swap(0, core::sync::atomic::Ordering::SeqCst);
-    let pid = ProcessId::from_raw(raw);
-    let snap = process::snapshot(pid).expect("user_thread_entry: pid missing from registry");
+    let pid = thread::current_process();
+    let snap = match KERNEL.call(Caller::User(pid), Request::ProcessSnapshot { pid }) {
+        Response::Snapshot(Some(snapshot)) => snapshot,
+        _ => panic!("user_thread_entry: pid missing from registry"),
+    };
     kinfoln!(
         "USER",
         "thread {} entering ring 3 for pid {} @ rip={:#x}",
-        thread::THREADS.lock().current().as_u64(),
+        thread::current_id().as_u64(),
         pid.as_u64(),
         snap.user_entry.as_u64()
     );
@@ -347,65 +336,99 @@ pub unsafe extern "C" fn syscall_isr() {
 }
 
 const SYS_EXIT: u64 = 0;
-const SYS_PRINT: u64 = 1;
+const SYS_WRITE: u64 = 1;
+const SYS_READ: u64 = 2;
+const SYS_YIELD: u64 = 3;
 
-/// Maximum byte count accepted by `sys_print` to bound the slice we
-/// build over user memory.
-const SYS_PRINT_MAX: u64 = 4096;
+const STDOUT: u64 = 1;
+
+/// Maximum byte count accepted by a single syscall buffer.
+const MAX_USER_IO: usize = 4096;
+
+fn errno(error: SysError) -> u64 {
+    error.errno() as u64
+}
 
 #[unsafe(no_mangle)]
 extern "C" fn syscall_dispatch(frame: *mut SyscallFrame) {
     // SAFETY: `frame` is `rsp` immediately after our ISR's pushes.
     // It points at the saved GP-reg block on the privilege stack.
     let frame = unsafe { &mut *frame };
-    match frame.rax {
-        SYS_EXIT => sys_exit(frame.rdi as i32),
-        SYS_PRINT => sys_print(frame, frame.rdi, frame.rsi),
+    let caller = Caller::User(thread::current_process());
+
+    frame.rax = match frame.rax {
+        SYS_EXIT => sys_exit(caller, frame.rdi as i32),
+        SYS_WRITE => sys_write(caller, frame),
+        SYS_READ => sys_read(caller),
+        SYS_YIELD => sys_yield(caller),
         n => {
-            kwarnln!("SYCL", "unknown syscall {} from ring 3", n);
-            frame.rax = u64::MAX;
+            kwarnln!("SYSC", "unknown syscall {} from ring 3", n);
+            errno(SysError::Unsupported)
         }
-    }
+    };
 }
 
-/// `sys_exit(code: i32)` — terminate the current process.
-///
-/// Removes the process from the registry, decrements the live
-/// counters, and tears down the host kernel thread via
-/// [`thread::exit_thread`]. Control returns to whichever thread is
-/// next on the kernel-thread ready queue (the bootstrap thread, in
-/// the demo).
-fn sys_exit(code: i32) -> ! {
-    kinfoln!("USER", "sys_exit({})", code);
-    // Today there is at most one user process at a time; pick the
-    // first one out of the registry.
-    let pid_opt = process::PROCESSES.lock().keys().next().copied();
-    if let Some(pid) = pid_opt {
-        process::exit(pid, code);
-    }
+/// `sys_exit(code)` — terminate the calling process and its host thread.
+fn sys_exit(caller: Caller, code: i32) -> ! {
+    let Caller::User(pid) = caller else {
+        panic!("sys_exit called from kernel context");
+    };
+    kinfoln!("USER", "sys_exit({}) for pid {}", code, pid.as_u64());
+    let _ = KERNEL.call(caller, Request::ProcessExit { pid, code });
     thread::exit_thread();
 }
 
-/// `sys_print(ptr, len) -> len` — print `len` bytes from user memory.
+/// `sys_write(fd, ptr, len) -> len` — write a validated user buffer.
+fn sys_write(caller: Caller, frame: &SyscallFrame) -> u64 {
+    if frame.rdi != STDOUT {
+        return errno(SysError::BadHandle);
+    }
+    let Some(bytes) = user_bytes(frame.rsi, frame.rdx) else {
+        return errno(SysError::BadPointer);
+    };
+    match KERNEL.call(caller, Request::ConsoleWrite(bytes)) {
+        Response::Written(written) => written as u64,
+        Response::Err(error) => errno(error),
+        _ => errno(SysError::Unsupported),
+    }
+}
+
+/// `sys_read() -> u8` — pop one decoded keyboard byte, or `-EAGAIN`.
+fn sys_read(caller: Caller) -> u64 {
+    match KERNEL.call(caller, Request::InputReadByte) {
+        Response::Byte(Some(byte)) => byte as u64,
+        Response::Byte(None) => errno(SysError::WouldBlock),
+        Response::Err(error) => errno(error),
+        _ => errno(SysError::Unsupported),
+    }
+}
+
+/// `sys_yield()` — voluntarily give up the CPU.
+fn sys_yield(caller: Caller) -> u64 {
+    match KERNEL.call(caller, Request::ThreadYield) {
+        Response::Ok => 0,
+        Response::Err(error) => errno(error),
+        _ => errno(SysError::Unsupported),
+    }
+}
+
+/// Validate a ring-3 buffer before the kernel dereferences it.
 ///
-/// User memory is shared with the kernel address space today, so the
-/// kernel can read the buffer directly. Bytes are forwarded to the
-/// VGA / serial writer one at a time so a non-UTF-8 buffer doesn't
-/// panic.
-fn sys_print(frame: &mut SyscallFrame, ptr: u64, len: u64) {
-    if len > SYS_PRINT_MAX {
-        kwarnln!("SYCL", "sys_print: refusing oversized len {}", len);
-        frame.rax = u64::MAX;
-        return;
+/// The kernel and every process currently share one address space, so a
+/// pointer check is the only isolation available. Restrict buffers to
+/// the mapped user code/stack window and to one page-sized transfer.
+fn user_bytes(ptr: u64, len: u64) -> Option<&'static [u8]> {
+    if len > MAX_USER_IO as u64 {
+        return None;
     }
-    // SAFETY: ptr+len lives in the user's address space, which is
-    // mapped into ours; the bound check above keeps len modest.
-    let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len as usize) };
-    // Forward to the VGA writer so user output appears on screen.
-    for &b in bytes {
-        crate::print!("{}", b as char);
+    let end = ptr.checked_add(len)?;
+    if ptr < USER_CODE_BASE || end > USER_STACK_TOP {
+        return None;
     }
-    frame.rax = len;
+    // SAFETY: the range lies inside the user window, which the process
+    // setup mapped USER_ACCESSIBLE. The kernel shares the page tables,
+    // so the bytes are readable from ring 0.
+    Some(unsafe { core::slice::from_raw_parts(ptr as *const u8, len as usize) })
 }
 
 #[cfg(test)]
@@ -431,5 +454,15 @@ mod tests {
     fn test_syscall_frame_layout_is_120_plus_40_bytes() {
         // 15 saved GP regs (120) + 5 iretq slots (40) = 160 bytes.
         assert_eq!(core::mem::size_of::<SyscallFrame>(), 160);
+    }
+
+    #[test_case]
+    fn test_user_buffer_validation_rejects_out_of_range() {
+        // These paths return before constructing a slice, so they are
+        // safe even though the pages are not mapped in the test kernel.
+        assert!(user_bytes(0x1000, 1).is_none());
+        assert!(user_bytes(USER_STACK_TOP - 1, 2).is_none());
+        assert!(user_bytes(USER_CODE_BASE, MAX_USER_IO as u64 + 1).is_none());
+        assert!(user_bytes(u64::MAX, 2).is_none());
     }
 }

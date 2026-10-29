@@ -1,26 +1,14 @@
-//! Processes — the unit of isolation between userland tasks.
+//! Process descriptors and lifecycle states.
 //!
-//! A [`Process`] today owns:
-//! - a unique [`ProcessId`]
-//! - an `Option<PhysAddr>` page-table root (today always `None` — every
-//!   process shares the kernel address space; per-process page tables
-//!   slot in here later)
-//! - the user-mode entry point and the top of the user stack
-//! - a lifecycle [`ProcessState`]
+//! The registry itself lives in [`crate::kernel::KERNEL`]'s process
+//! service. This module defines the data model and the small compatibility
+//! helpers used by tests; new code should go through `KERNEL.call`.
 //!
-//! Processes are tracked in [`PROCESSES`], a `Mutex<BTreeMap>` keyed by
-//! [`ProcessId`]. [`crate::userland::create_demo_process`] populates the
-//! address space and registers a new process, and
-//! [`crate::userland::spawn_user_thread`] attaches a host
-//! [`crate::thread::KernelThread`] that drops the process into ring 3.
-//!
-//! [`KernelStack`] / [`UserContext`] are kept as data-layout placeholders
-//! for the future per-process kernel stack and saved register frame.
+//! A [`Process`] owns its identity, the user entry coordinates, and a
+//! lifecycle state. The page-table root is `None` today: every process
+//! shares the kernel address space until per-process page tables land.
 
-use crate::scheduler::SCHEDULER;
-use alloc::collections::BTreeMap;
 use core::sync::atomic::{AtomicU64, Ordering};
-use spin::Mutex;
 use x86_64::{PhysAddr, VirtAddr};
 
 /// Process-wide unique identifier.
@@ -40,12 +28,6 @@ impl ProcessId {
 
     pub fn as_u64(self) -> u64 {
         self.0
-    }
-
-    /// Reconstruct a [`ProcessId`] from its raw `u64` representation.
-    /// Used by the syscall handoff paths.
-    pub(crate) fn from_raw(v: u64) -> Self {
-        ProcessId(v)
     }
 }
 
@@ -119,34 +101,19 @@ impl Process {
     }
 }
 
-/// Global process registry.
-pub static PROCESSES: Mutex<BTreeMap<ProcessId, Process>> = Mutex::new(BTreeMap::new());
-
-/// Insert `process` into the registry and bump the scheduler's
-/// "processes spawned / alive" counters. Returns the new process id.
+/// Register a process with the kernel. Compatibility wrapper around the
+/// process service; new code should use [`crate::kernel::KERNEL`].
 pub fn register(process: Process) -> ProcessId {
-    let pid = process.pid;
-    PROCESSES.lock().insert(pid, process);
-    SCHEDULER.note_process_spawned();
-    pid
+    crate::kernel::KERNEL.register_process(process)
 }
 
-/// Mark `pid` as exited with `code`, drop it from the registry, and
-/// notify the scheduler.
+/// Remove `pid` from the registry and notify the scheduler.
 pub fn exit(pid: ProcessId, code: i32) {
-    let removed = PROCESSES.lock().remove(&pid);
-    if let Some(mut p) = removed {
-        // The descriptor is dropped at the end of this scope; the
-        // exit code is recorded for any future `wait`-style API.
-        p.state = ProcessState::Exited(code);
-        let _ = p.state;
-        SCHEDULER.note_process_exited();
-    }
+    let _ = crate::kernel::KERNEL.exit_process(pid, code);
 }
 
-/// Read-only snapshot of a process descriptor for callers that need
-/// the entry point / stack without holding the registry lock.
-#[derive(Debug, Clone, Copy)]
+/// Read-only snapshot of a process descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcessSnapshot {
     pub pid: ProcessId,
     pub user_entry: VirtAddr,
@@ -155,17 +122,18 @@ pub struct ProcessSnapshot {
 }
 
 pub fn snapshot(pid: ProcessId) -> Option<ProcessSnapshot> {
-    PROCESSES.lock().get(&pid).map(|p| ProcessSnapshot {
-        pid: p.pid,
-        user_entry: p.user_entry,
-        user_stack_top: p.user_stack_top,
-        state: p.state,
-    })
+    crate::kernel::KERNEL.process_snapshot(pid)
+}
+
+/// Whether `pid` is currently registered.
+pub fn is_registered(pid: ProcessId) -> bool {
+    snapshot(pid).is_some()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scheduler::SCHEDULER;
 
     #[test_case]
     fn test_kernel_pid_is_zero() {

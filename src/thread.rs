@@ -230,6 +230,31 @@ impl ThreadScheduler {
     }
 }
 
+/// The process tag of the currently running kernel thread.
+///
+/// The bootstrap thread belongs to the implicit kernel process.
+pub fn current_process() -> ProcessId {
+    let sched = THREADS.lock();
+    if sched.current == BOOTSTRAP_ID {
+        return ProcessId::KERNEL;
+    }
+    sched
+        .threads
+        .get(&sched.current)
+        .map(|thread| thread.process())
+        .unwrap_or(ProcessId::KERNEL)
+}
+
+/// Id of the currently running kernel thread.
+pub fn current_id() -> ThreadId {
+    THREADS.lock().current()
+}
+
+/// Number of runnable kernel threads, excluding the running one.
+pub fn ready_count() -> usize {
+    THREADS.lock().ready_count()
+}
+
 /// Drop any thread that called [`exit_thread`] before us. Safe to call
 /// from any thread *other* than the one being reaped, which is the
 /// invariant established by exit_thread + the round-robin queue.

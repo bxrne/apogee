@@ -25,6 +25,7 @@ use bootloader::{BootInfo, entry_point};
 pub mod allocator;
 pub mod gdt;
 pub mod interrupts;
+pub mod kernel;
 pub mod logger;
 pub mod memory;
 pub mod process;

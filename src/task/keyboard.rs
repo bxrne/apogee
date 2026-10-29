@@ -31,9 +31,15 @@ use crate::{kdebugln, kwarnln};
 /// the async keyboard task. Initialised lazily by [`ScancodeStream::new`].
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 
+/// Bounded queue of decoded ASCII bytes consumed by `sys_read`.
+static KEY_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
+
 /// Capacity of [`SCANCODE_QUEUE`]. 100 entries is more than enough for
 /// realistic typing rates.
 const SCANCODE_QUEUE_CAPACITY: usize = 100;
+
+/// Capacity of [`KEY_QUEUE`].
+const KEY_QUEUE_CAPACITY: usize = 100;
 
 /// The waker registered by [`ScancodeStream::poll_next`] when the queue is
 /// empty. [`add_scancode`] wakes it after every successful push.
@@ -88,8 +94,19 @@ impl ScancodeStream {
         SCANCODE_QUEUE
             .try_init_once(|| ArrayQueue::new(SCANCODE_QUEUE_CAPACITY))
             .expect("ScancodeStream::new should only be called once");
+        KEY_QUEUE
+            .try_init_once(|| ArrayQueue::new(KEY_QUEUE_CAPACITY))
+            .expect("key queue should only be initialised once");
         ScancodeStream { _private: () }
     }
+}
+
+/// Pop one decoded ASCII byte for the `read` syscall.
+///
+/// Returns `None` when the queue is empty or the keyboard task has not
+/// started yet; the syscall translates that to `-EAGAIN`.
+pub fn read_byte() -> Option<u8> {
+    KEY_QUEUE.try_get().ok()?.pop()
 }
 
 impl Stream for ScancodeStream {
@@ -141,11 +158,15 @@ pub async fn print_keypresses() {
             && let Some(key) = keyboard.process_keyevent(key_event)
         {
             match key {
-
                 DecodedKey::Unicode(character) => {
+                    if let Ok(queue) = KEY_QUEUE.try_get()
+                        && (character as u32) <= 0x7f
+                    {
+                        let _ = queue.push(character as u8);
+                    }
                     kdebugln!("KBD ", "{}", character);
-                        print!("{}", character);
-                },
+                    print!("{}", character);
+                }
                 DecodedKey::RawKey(key) => kdebugln!("KBD ", "{:?}", key),
             }
         }

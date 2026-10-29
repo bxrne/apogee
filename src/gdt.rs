@@ -4,7 +4,7 @@
 //! as privilege-level handles. The GDT installed here exposes:
 //!
 //! - the kernel code/data segments (ring 0)
-//! - the user code/data segments (ring 3) — used by [`crate::userland`]
+//! - the user code/data segments (ring 3) — used by [`crate::syscall`]
 //!   when transitioning into ring 3 via `iretq` and by the syscall ISR
 //!   on the way back out
 //! - a TSS with two stacks plumbed in:

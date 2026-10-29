@@ -4,8 +4,8 @@ use crate::kernel::{Caller, KERNEL, Request};
 use crate::kwarnln;
 use crate::println;
 use crate::process::ProcessId;
+use crate::syscall;
 use crate::thread;
-use crate::userland;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
@@ -61,7 +61,7 @@ lazy_static! {
         // so ring-3 user code can issue `int 0x80`.
         unsafe {
             let typed: extern "x86-interrupt" fn(InterruptStackFrame) =
-                core::mem::transmute(userland::syscall_isr as *const ());
+                core::mem::transmute(syscall::syscall_isr as *const ());
             idt[SYSCALL_VECTOR as usize]
                 .set_handler_fn(typed)
                 .set_privilege_level(PrivilegeLevel::Ring3);

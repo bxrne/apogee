@@ -50,7 +50,7 @@ pub struct KernelStack {
 }
 
 /// Saved user-mode register state. Populated by the syscall / interrupt
-/// entry path; today the [`crate::userland::SyscallFrame`] is what
+/// entry path; today the [`crate::syscall::SyscallFrame`] is what
 /// actually carries register state across a syscall, but this struct is
 /// kept as the future "process register save" type.
 #[repr(C)]

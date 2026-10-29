@@ -190,6 +190,11 @@ impl ThreadScheduler {
     fn spawn(&mut self, entry: extern "C" fn() -> !, process: ProcessId) -> ThreadId {
         let thread = Box::new(KernelThread::new(entry, process));
         let id = thread.id();
+        debug_assert!(
+            !self.threads.contains_key(&id),
+            "spawned thread id {} is already tracked",
+            id.as_u64()
+        );
         self.threads.insert(id, thread);
         self.ready.push_back(id);
         SCHEDULER.note_thread_spawned();

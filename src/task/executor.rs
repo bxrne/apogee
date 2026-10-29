@@ -64,6 +64,10 @@ impl CoopExecutor {
     /// indicate a [`TaskId`] generation bug) or if the ready queue is full.
     pub fn spawn(&mut self, task: Task) {
         let task_id = task.id();
+        debug_assert!(
+            !self.tasks.contains_key(&task_id),
+            "task with same ID already in tasks"
+        );
         if self.tasks.insert(task_id, task).is_some() {
             panic!("task with same ID already in tasks");
         }

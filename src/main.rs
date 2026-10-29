@@ -70,7 +70,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     kdebugln!("MEM ", "offset page table initialized");
     let mut frame_allocator =
-        unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
+        unsafe { memory::MonotonicFrameAllocator::init(&boot_info.memory_map) };
     kdebugln!("MEM ", "boot frame allocator initialized");
 
     let page = Page::containing_address(VirtAddr::new(0));
@@ -114,7 +114,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 /// falls through to the async executor.
 fn userland_demo(
     mapper: &mut x86_64::structures::paging::OffsetPageTable<'static>,
-    frame_allocator: &mut memory::BootInfoFrameAllocator,
+    frame_allocator: &mut memory::MonotonicFrameAllocator,
 ) {
     kinfoln!("USER", "bringing up demo ring-3 process");
     let pid = match userland::create_demo_process(mapper, frame_allocator) {

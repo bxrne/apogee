@@ -9,7 +9,7 @@ use x86_64::{
 #[cfg(test)]
 use x86_64::structures::paging::PageTableFlags;
 
-use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
+use bootloader::bootinfo::{MemoryMap, MemoryRegion, MemoryRegionType};
 
 /// Initialize a new OffsetPageTable.
 ///
@@ -55,39 +55,100 @@ pub fn create_example_mapping(
 }
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
-pub struct BootInfoFrameAllocator {
+///
+/// Frames are handed out in ascending address order and never reused, so
+/// allocation is monotonic. The allocator keeps a cursor over the usable
+/// regions instead of rescanning the memory map on every allocation, which
+/// makes handing out frames O(1) amortized.
+pub struct MonotonicFrameAllocator {
     memory_map: &'static MemoryMap,
-    next: usize,
+    /// Position of the next candidate frame in the flattened sequence of
+    /// usable frames, ordered by ascending address.
+    cursor: FrameCursor,
 }
 
-impl BootInfoFrameAllocator {
+/// Position of the next candidate frame in the flattened sequence of usable
+/// frames, ordered by ascending address.
+///
+/// The cursor only ever moves forward, so frames are handed out in ascending
+/// address order without ever rescanning the ones that were already handed out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FrameCursor {
+    /// Index of the usable region the cursor is currently filling.
+    region: usize,
+    /// Offset of the next candidate frame within the current region.
+    offset: usize,
+}
+
+impl FrameCursor {
+    const fn new() -> Self {
+        FrameCursor {
+            region: 0,
+            offset: 0,
+        }
+    }
+}
+
+impl MonotonicFrameAllocator {
     /// Create a FrameAllocator from the passed memory map.
     ///
     /// # Safety
     /// The caller must guarantee that all frames marked `USABLE` in the memory
     /// map are really unused.
     pub unsafe fn init(memory_map: &'static MemoryMap) -> Self {
-        BootInfoFrameAllocator {
+        MonotonicFrameAllocator {
             memory_map,
-            next: 0,
+            cursor: FrameCursor::new(),
         }
     }
 
-    /// Returns an iterator over the usable frames specified in the memory map.
-    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
-        let regions = self.memory_map.iter();
-        let usable_regions = regions.filter(|r| r.region_type == MemoryRegionType::Usable);
-        let addr_ranges = usable_regions.map(|r| r.range.start_addr()..r.range.end_addr());
-        let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
-        frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+    /// Returns the next usable frame in ascending address order, or `None`
+    /// once the usable frames are exhausted.
+    fn next_frame(&mut self) -> Option<PhysFrame> {
+        let regions: &[MemoryRegion] = self.memory_map;
+        let mut region = self.cursor.region;
+        let mut offset = self.cursor.offset;
+
+        loop {
+            let mut selected: Option<&MemoryRegion> = None;
+            let mut usable_ordinal = 0;
+            for candidate in regions.iter() {
+                if candidate.region_type != MemoryRegionType::Usable {
+                    continue;
+                }
+                if usable_ordinal == region {
+                    selected = Some(candidate);
+                    break;
+                }
+                usable_ordinal += 1;
+            }
+            let Some(current) = selected else {
+                return None;
+            };
+
+            let start = current.range.start_addr();
+            let end = current.range.end_addr();
+            let frame_count = ((end - start) / 4096) as usize;
+            if offset < frame_count {
+                let phys =
+                    PhysFrame::containing_address(PhysAddr::new(start + (offset * 4096) as u64));
+                self.cursor = FrameCursor {
+                    region,
+                    offset: offset + 1,
+                };
+                return Some(phys);
+            }
+
+            // The current region is exhausted; move on to the next usable one.
+            region += 1;
+            offset = 0;
+        }
     }
 }
 
-unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
+unsafe impl FrameAllocator<Size4KiB> for MonotonicFrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        let frame = self.usable_frames().nth(self.next);
-        self.next += 1;
-        frame
+        self.next_frame()
     }
 }
 

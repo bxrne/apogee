@@ -26,7 +26,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator =
-        unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
+        unsafe { memory::MonotonicFrameAllocator::init(&boot_info.memory_map) };
 
     apogee::allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("heap initialization failed");
